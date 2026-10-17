@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ScreenPlacement.onlyMode = .simple
         // On the Mac's own display alone, not on a Sidecar iPad or another display.
         DesktopApplication.builtInDisplayOnly = true
+        // The marks in their rings at rest; a rest on them unfolds the numbers, a double click opens the details.
+        DesktopApplication.simpleCapsule = true
         if let directory = options.snapshotDirectory {
             Task { @MainActor in
                 await SnapshotRunner.run(language: options.language, into: directory)

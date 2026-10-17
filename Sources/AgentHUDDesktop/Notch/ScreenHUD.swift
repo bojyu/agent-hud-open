@@ -96,6 +96,13 @@ final class ScreenHUD {
     private var sampledPointer: CGPoint?
     /// Whether the hover currently counts as one that opens the panel; see `reevaluateHover`.
     private var hoverOpens = false
+    /// The Simple panel unfolded from its rings alone to its rings and numbers by a pointer that rested on it
+    /// (`DesktopApplication.simpleCapsule`).
+    private var stripRevealed = false
+    /// Unfolds the panel once the pointer has rested on it, or folds it back once the pointer has left it.
+    private var capsuleTimer: Timer?
+    /// When the last plain click on the panel landed: the next within the double-click interval opens the usage panel.
+    private var lastClickAt: Date?
     /// The user is typing into the island. It stays open under their hands, wherever the pointer goes, until they stop.
     private var typing = false
     private var modifierWatch: Timer?
@@ -331,7 +338,7 @@ final class ScreenHUD {
         dragSurface.onBegin = { [weak self] point in self?.beginMoving(at: point) }
         dragSurface.onDrag = { [weak self] point in self?.move(to: point) }
         dragSurface.onEnd = { [weak self] in self?.finishMoving() }
-        dragSurface.onClick = { [weak self] in self?.pinAgent() }
+        dragSurface.onClick = { [weak self] in self?.clicked() }
 
         apply(animated: false)
         island.show()
@@ -376,6 +383,7 @@ final class ScreenHUD {
     func samplePointer() {
         let point = mouseLocation()
         if previewPlacement == nil, !dragSurface.isPressed { followHoveredMark(point) }
+        followCapsule(point)
         let region = hoverRegion, usagePanelOpen = machine.isOpen && !showsAlertDetails
         let inside = Self.hovers(point, region: region, held: heldHoverRegion, usagePanelOpen: usagePanelOpen)
         // The pointer came onto the HUD where it was last found off what the HUD covers now: a panel that opened or grew
@@ -427,12 +435,85 @@ final class ScreenHUD {
         return alert ?? marks
     }
 
+    // MARK: Capsule
+
+    /// How long the pointer rests on the folded panel before it unfolds, and how long after it leaves the panel folds.
+    static let capsuleRestDelay: TimeInterval = 1.5
+    static let capsuleFoldDelay: TimeInterval = 0.8
+
+    /// This screen's Simple panel folds to its rings alone at rest (`DesktopApplication.simpleCapsule`).
+    private var foldsIntoCapsule: Bool { DesktopApplication.simpleCapsule && placement.mode == .simple }
+
+    /// Whether the panel rests folded now: not unfolded, and nothing open, arriving, moved or held on it.
+    private var showsCapsule: Bool {
+        foldsIntoCapsule && !stripRevealed && !machine.isOpen && activeAlert == nil && previewPlacement == nil
+            && !dragSurface.isPressed
+    }
+
+    /// Unfolds the panel once the pointer has rested on it for `capsuleRestDelay`, and folds it again once the
+    /// pointer has been off it for `capsuleFoldDelay`, unless the usage panel or an event is up.
+    private func followCapsule(_ point: CGPoint) {
+        guard foldsIntoCapsule, previewPlacement == nil, !dragSurface.isPressed else { return }
+        let over = Self.containsPointer(point, in: hoverRegion)
+        let settled = stripRevealed ? over || machine.isOpen || activeAlert != nil : !over
+        guard !settled else {
+            capsuleTimer?.invalidate()
+            capsuleTimer = nil
+            return
+        }
+        guard capsuleTimer == nil else { return }
+        let unfolds = !stripRevealed
+        let timer = Timer(timeInterval: unfolds ? Self.capsuleRestDelay : Self.capsuleFoldDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.capsuleTimer = nil
+                let over = Self.containsPointer(self.mouseLocation(), in: self.hoverRegion)
+                if unfolds {
+                    guard over, !self.stripRevealed else { return }
+                } else {
+                    guard !over, !self.machine.isOpen, self.activeAlert == nil, self.stripRevealed else { return }
+                }
+                self.stripRevealed = unfolds
+                self.lastClickAt = nil
+                self.apply(animated: true)
+                self.samplePointer()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        capsuleTimer = timer
+    }
+
+    /// A click on the panel. A folding panel unfolds at a click while folded and opens the usage panel at a double click
+    /// once unfolded; any other panel opens the clicked agent's own card (`pinAgent()`).
+    private func clicked() {
+        guard foldsIntoCapsule else { return pinAgent() }
+        if showsCapsule {
+            capsuleTimer?.invalidate()
+            capsuleTimer = nil
+            stripRevealed = true
+            apply(animated: true)
+            return
+        }
+        let now = Date()
+        guard let last = lastClickAt, now.timeIntervalSince(last) <= NSEvent.doubleClickInterval else {
+            lastClickAt = now
+            return
+        }
+        lastClickAt = nil
+        if placement.separatesAgents { return pinAgent() }
+        hoverOpens = true
+        forceOpen()
+    }
+
     /// Hovering opens the panel, unless the user asked for Option as well. Typing keeps it open either way.
     private func reevaluateHover() {
         guard !dragSurface.isPressed, previewPlacement == nil else { return }
-        let opens = ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
-                                           typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
-                                           optionDown: NSEvent.modifierFlags.contains(.option))
+        // A folding Simple panel opens on a double click alone; the hover only keeps the panel it opened.
+        let opens = foldsIntoCapsule
+            ? typing || pointerInside && (hoverOpens || machine.isOpen)
+            : ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
+                                     typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
+                                     optionDown: NSEvent.modifierFlags.contains(.option))
         let canFinishOpening = switch machine.state {
         case .opening: true
         // A handoff to Settings or Stats deliberately stays collapsed until the pointer leaves.
@@ -726,6 +807,7 @@ final class ScreenHUD {
             // hold opens it for an agent's edit, which is no such reason.
             if machine.isOpen, reads { Task { await store.refreshAccounts() } }
             apply(animated: true)
+            if !machine.isOpen { followCapsule(mouseLocation()) }
         }
     }
 
@@ -953,7 +1035,10 @@ final class ScreenHUD {
 
     /// What a docked HUD takes along its edge: the logo queue, or the Simple panel with its margin.
     private func dockSize(for placement: ScreenPlacement) -> CGSize {
-        if placement.mode == .simple { return SimpleMeterConfig(items: meterItems, placement: placement).stripSize }
+        if placement.mode == .simple {
+            let meter = SimpleMeterConfig(items: meterItems, placement: placement)
+            return (showsCapsule ? meter.folded : meter).stripSize
+        }
         return queueSize(LogoQueueConfig(items: queueItems, placement: placement, settings: settings.settings))
     }
 
@@ -963,7 +1048,8 @@ final class ScreenHUD {
 
     private var simpleMeter: SimpleMeterConfig? {
         guard geometry.mode == .simple else { return nil }
-        return SimpleMeterConfig(items: meterItems, placement: placement, bots: settings.settings.botLogos)
+        let meter = SimpleMeterConfig(items: meterItems, placement: placement, bots: settings.settings.botLogos)
+        return showsCapsule ? meter.folded : meter
     }
 
     private var logoQueue: LogoQueueConfig? {

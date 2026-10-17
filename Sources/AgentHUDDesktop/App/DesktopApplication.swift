@@ -8,6 +8,9 @@ public final class DesktopApplication {
     /// Only the Mac's own display gets a HUD, the main display while the lid is closed; every display when false. A host
     /// sets it once at launch.
     public static var builtInDisplayOnly = false
+    /// A Simple panel rests as its marks in their rings, unfolds to show its numbers when the pointer rests on it, and opens
+    /// the usage panel at a double click rather than a hover. A host sets it once at launch.
+    public static var simpleCapsule = false
     public let settings: SettingsStore
     public let store: UsageStore
     private let options: DesktopLaunchOptions

@@ -124,6 +124,13 @@ struct SimpleMeterConfig: Equatable {
         self.bots = bots
     }
 
+    /// The panel as it rests when it folds (`DesktopApplication.simpleCapsule`): the marks in their rings, with no number.
+    var folded: SimpleMeterConfig {
+        var folded = self
+        folded.showsNumbers = false
+        return folded
+    }
+
     /// Side of one mark: inside its ring, or a little larger when it stands alone.
     var logo: CGFloat { (size * (showsRings ? 0.55 : 0.68)).rounded() }
     /// The square a mark takes, ring included.

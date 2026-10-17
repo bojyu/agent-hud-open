@@ -30,6 +30,18 @@ final class SimpleMeterTests: XCTestCase {
         XCTAssertEqual(busy.map(\.isWorking), [false, true, false], "Work under a shared mark is that mark's work")
     }
 
+    func testAFoldedPanelKeepsItsRingsWithoutNumbers() {
+        let meter = SimpleMeterConfig(items: [SimpleMeterItem(vendor: "Claude", usedPct: 40, level: .ok),
+                                              SimpleMeterItem(vendor: "Codex", usedPct: 92, level: .critical)],
+                                      placement: ScreenPlacement(mode: .simple, edge: .left))
+        let folded = meter.folded
+        XCTAssertTrue(folded.showsRings)
+        XCTAssertFalse(folded.showsNumbers)
+        XCTAssertEqual(folded.items, meter.items, "every agent keeps its mark")
+        XCTAssertEqual(folded.markCentres.map(\.vendor), ["Claude", "Codex"])
+        XCTAssertLessThan(folded.panelSize.width, meter.panelSize.width, "narrower without its numbers")
+    }
+
     @MainActor
     func testNotionsRingShowsItsMonthlyWindowEvenWhenAnotherIsMoreUsed() {
         let now = Date()
