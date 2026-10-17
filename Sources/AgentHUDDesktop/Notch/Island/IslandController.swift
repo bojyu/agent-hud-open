@@ -134,8 +134,20 @@ final class IslandController {
     /// screen at all still gets one, so the app has somewhere to draw the moment a display appears.
     private func rebuild() {
         ScreenIdentity.forgetKeys()
-        let screens = NSScreen.screens
+        let screens = Self.shownScreens(NSScreen.screens)
         rebuild(keys: screens.isEmpty ? ["screen:none"] : screens.map { ScreenIdentity.key(for: $0) }, screens: screens)
+    }
+
+    /// The displays that get a HUD: every one, or with `DesktopApplication.builtInDisplayOnly` the Mac's own display,
+    /// else the main one while the lid is closed, so there is always one.
+    static func shownScreens(_ screens: [NSScreen]) -> [NSScreen] {
+        guard DesktopApplication.builtInDisplayOnly else { return screens }
+        let builtIn = screens.filter { screen in
+            (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
+                .map { CGDisplayIsBuiltin(CGDirectDisplayID($0.uint32Value)) != 0 } ?? false
+        }
+        if !builtIn.isEmpty { return builtIn }
+        return NSScreen.main.map { [$0] } ?? Array(screens.prefix(1))
     }
 
     /// One HUD per key, in display order; `screens` holds the display behind each key that has one. The requests a

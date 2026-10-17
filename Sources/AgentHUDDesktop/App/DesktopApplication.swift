@@ -5,6 +5,9 @@ import SwiftUI
 /// Owns the local desktop presentation and observes the supplied usage store.
 @MainActor
 public final class DesktopApplication {
+    /// Only the Mac's own display gets a HUD, the main display while the lid is closed; every display when false. A host
+    /// sets it once at launch.
+    public static var builtInDisplayOnly = false
     public let settings: SettingsStore
     public let store: UsageStore
     private let options: DesktopLaunchOptions

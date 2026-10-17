@@ -282,6 +282,11 @@ struct BotSpec: Sendable {
                           crossesEyes: true),
         "ZCode": BotSpec(reach: 0.8, shape: .slant(width: 0.66, height: 0.64, skew: 0.2, round: 0.05)),
         "Qwen": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7), spin: 7, crossesEyes: true),
+        // The marks of the channels the Dmit quota hub reads, each its own outline in its own colours: Muse's squiggle,
+        // Kie's letter and Notion's cube, which, a single colour, is tinted to the ground as Kimi's is.
+        "Muse": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7)),
+        "Kie": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7)),
+        "Notion": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7)),
         // A plain red ball with two round black eyes and the logo's pair of small antennae. The logo's cyan
         // pupils are left out: on a face this small they stare.
         "OpenClaw": BotSpec(center: CGPoint(x: 0.5, y: 0.54), reach: 0.7,

@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let options = DesktopLaunchOptions.parse(CommandLine.arguments)
         // Only the Simple panel: no island at the notch, no glow, no logo queue, on every display.
         ScreenPlacement.onlyMode = .simple
+        // On the Mac's own display alone, not on a Sidecar iPad or another display.
+        DesktopApplication.builtInDisplayOnly = true
         if let directory = options.snapshotDirectory {
             Task { @MainActor in
                 await SnapshotRunner.run(language: options.language, into: directory)

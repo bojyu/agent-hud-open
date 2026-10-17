@@ -31,6 +31,27 @@ final class SimpleMeterTests: XCTestCase {
     }
 
     @MainActor
+    func testNotionsRingShowsItsMonthlyWindowEvenWhenAnotherIsMoreUsed() {
+        let now = Date()
+        let account = ProviderAccount(provider: "Notion", user: "user", workspace: "", evidence: .account)
+        func agent(_ window: String) -> AgentDescriptor {
+            AgentDescriptor(id: account.windowID(window), vendor: "Notion", model: window, source: "test", enabled: true, account: account)
+        }
+        let agents = [agent("rolling"), agent("monthly"), agent("credits")]
+        let report = UsageReport(generatedAt: now, snapshots: [
+            .init(agentId: account.windowID("rolling"), remainingPct: 97, resetAt: now.addingTimeInterval(3600), windowDuration: 6.0 * 3600, updatedAt: now),
+            .init(agentId: account.windowID("monthly"), remainingPct: 72, resetAt: now.addingTimeInterval(86400), windowDuration: 30.0 * 86400, updatedAt: now),
+            .init(agentId: account.windowID("credits"), remainingPct: 55, resetAt: now.addingTimeInterval(86400), updatedAt: now),
+        ], sessions: [])
+        let view = ReportView(report: report, agents: agents, settings: Settings(), now: now)
+
+        let items = SimpleMeterItem.items(rows: view.rows)
+
+        XCTAssertEqual(items.map(\.vendor), ["Notion"])
+        XCTAssertEqual(items.map(\.usedPct), [28], "the monthly window, not the credits that are more used")
+    }
+
+    @MainActor
     func testAnAgentWithOnlyABalanceFollowsTheWindowsWithItsBalanceForAFigure() {
         let now = Date()
         let agents = [AgentDescriptor(id: "claude-5h", vendor: "Claude", model: "claude-5h", source: "test", enabled: true)]

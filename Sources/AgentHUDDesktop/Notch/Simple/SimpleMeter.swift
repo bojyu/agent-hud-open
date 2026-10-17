@@ -52,6 +52,10 @@ struct SimpleMeterItem: Identifiable, Equatable {
     ///
     /// - working: the vendors with a session running, as a logo queue is told them.
     /// - directions: what the director says each mark shows, by mark key, which a dock's marks are told the same.
+    /// The one window a vendor's ring shows whatever the others read, by vendor and window key: Notion's monthly
+    /// allowance rather than its six-hour window or its credits. The hover line still writes every window.
+    static let pinnedWindows = ["Notion": "monthly"]
+
     @MainActor
     static func items(rows: [AgentRow], balances: [Balance] = [], working: [String] = [],
                       directions: [String: MarkDirector.Direction] = [:]) -> [SimpleMeterItem] {
@@ -65,6 +69,8 @@ struct SimpleMeterItem: Identifiable, Equatable {
                 order.append(key)
                 vendors[key] = row.agent.vendor
             }
+            if let pinned = pinnedWindows[row.agent.vendor], row.agent.windowKey != pinned,
+               rows.contains(where: { $0.agent.vendor == row.agent.vendor && $0.agent.windowKey == pinned }) { continue }
             guard row.assessment.showsLevel, let used = row.usedPct, let level = row.level,
                   used > (tightest[key]?.used ?? -1) else { continue }
             tightest[key] = (used, level)
