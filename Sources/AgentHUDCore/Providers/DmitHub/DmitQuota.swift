@@ -28,6 +28,11 @@ struct DmitQuota: Hashable, Sendable {
         let creditsRemaining: Double?
         let creditsTotal: Double?
         let creditsResetAt: Date?
+        /// The money a balance is counted in (`CNY` for DeepSeek); nil for one counted in credits (Kie).
+        let creditsCurrency: String?
+        /// A balance's granted and topped-up parts, where the hub reads them apart.
+        let creditsGranted: Double?
+        let creditsToppedUp: Double?
         /// Codex's earned resets.
         let resetCredits: Int?
         /// Claude's share of use by surface, in percent (`claude_code`, `chat`, `cowork`, `other`).
@@ -84,6 +89,8 @@ struct DmitQuota: Hashable, Sendable {
                        status: text(object["status"]), stale: object["stale"] as? Bool ?? false, fetchedAt: date(object["fetched_at"]),
                        error: text(object["error"]), creditsRemaining: number(credits?["remaining"]),
                        creditsTotal: number(credits?["total"]), creditsResetAt: date(credits?["resets_at"]),
+                       creditsCurrency: text(credits?["currency"]), creditsGranted: number(credits?["granted"]),
+                       creditsToppedUp: number(credits?["topped_up"]),
                        resetCredits: number(object["reset_credits"]).map { Int($0) }, breakdown: breakdown,
                        topUpLabel: text(object["topup_label"]))
     }

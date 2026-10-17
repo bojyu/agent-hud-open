@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DesktopApplication.builtInDisplayOnly = true
         // The marks in their rings at rest; a rest on them unfolds the numbers, a double click opens the details.
         DesktopApplication.simpleCapsule = true
+        // DeepSeek's balance comes from the Dmit hub, which was asked to read it, so it shows at once.
+        VendorCatalog.shownAtOnce = ["DeepSeek"]
         if let directory = options.snapshotDirectory {
             Task { @MainActor in
                 await SnapshotRunner.run(language: options.language, into: directory)

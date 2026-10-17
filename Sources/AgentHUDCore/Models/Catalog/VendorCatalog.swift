@@ -50,7 +50,13 @@ public enum VendorCatalog {
 
     public static func name(_ vendor: String) -> String { entries[vendor]?.name ?? vendor }
 
-    public static func startsHidden(_ vendor: String) -> Bool { entries[vendor]?.startsHidden ?? false }
+    public static func startsHidden(_ vendor: String) -> Bool {
+        (entries[vendor]?.startsHidden ?? false) && !shownAtOnce.contains(vendor)
+    }
+
+    /// Vendors a host shows as soon as they arrive, though they would start hidden: one that reads an API balance from
+    /// somewhere it was asked to. A host sets it once at launch.
+    nonisolated(unsafe) public static var shownAtOnce: Set<String> = []
 
     /// The client the app shows for a name the vendor's logs wrote, or nil when no entry names it.
     public static func client(_ value: String, vendor: String) -> String? { entries[vendor]?.clients[value] }

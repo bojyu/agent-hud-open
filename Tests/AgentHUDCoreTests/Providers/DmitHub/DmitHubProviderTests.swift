@@ -28,7 +28,11 @@ final class DmitHubProviderTests: XCTestCase {
                  "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:11.167609+00:00"},
       "kie": {"available": true, "account_key": "fixture-kie",
               "credits": {"available": true, "used": null, "total": null, "remaining": 854.0, "resets_at": null},
-              "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"}
+              "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"},
+      "deepseek": {"available": true, "account_key": "fixture-deepseek",
+                   "credits": {"available": true, "remaining": 110.5, "granted": 10.0, "topped_up": 100.5, "currency": "CNY",
+                               "remaining_kind": "balance", "resets_at": null},
+                   "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"}
      },
      "totals": {"today_cost": 0, "today_tokens": 0, "date": "2026-10-17", "stale": false}}
     """#
@@ -91,11 +95,23 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(Self.row(report, "Notion", "monthly")?.remainingPct), 72.2, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(Self.row(report, "Notion", "credits")?.remainingPct), 164.461017 / 3, accuracy: 0.001)
 
-        // Kie is a balance in credits, not a quota window.
-        XCTAssertNil(report.discoveredAgents.first { $0.vendor == "Kie" })
-        XCTAssertEqual(report.billing.first?.vendor, "Kie")
-        XCTAssertEqual(report.billing.first?.balances.first?.total, 854)
-        XCTAssertEqual(report.billing.first?.currency, "credits")
+        // Kie and DeepSeek are balances, each under one API-billed row, with no quota window.
+        for vendor in ["Kie", "DeepSeek"] {
+            let rows = report.discoveredAgents.filter { $0.vendor == vendor }
+            XCTAssertEqual(rows.count, 1, vendor)
+            XCTAssertTrue(rows.allSatisfy(\.isAPIBilled), vendor)
+            let billing = try XCTUnwrap(report.billing.first { $0.vendor == vendor })
+            XCTAssertTrue(rows.allSatisfy(billing.contains), "\(vendor)'s balance is listed under its row")
+            XCTAssertFalse(report.snapshots.contains { snapshot in rows.contains { $0.id == snapshot.agentId } })
+        }
+        let kie = try XCTUnwrap(report.billing.first { $0.vendor == "Kie" })
+        XCTAssertEqual(kie.balances.first?.total, 854)
+        XCTAssertEqual(kie.currency, "credits")
+        let deepseek = try XCTUnwrap(report.billing.first { $0.vendor == "DeepSeek" })
+        XCTAssertEqual(deepseek.currency, "CNY")
+        XCTAssertEqual(deepseek.balances.first?.total, Decimal(string: "110.5"))
+        XCTAssertEqual(deepseek.balances.first?.granted, 10)
+        XCTAssertEqual(deepseek.balances.first?.toppedUp, Decimal(string: "100.5"))
 
         XCTAssertEqual(report.subscriptions["Codex"], "prolite")
         XCTAssertEqual(report.subscriptions["Muse"], "Muse Free")
@@ -143,7 +159,7 @@ final class DmitHubProviderTests: XCTestCase {
         let report = try await provider.fetchUsage(agents: [], historyHours: 24)
 
         XCTAssertEqual(Self.row(report, "Claude", ClaudeUsage.sessionRowId)?.remainingPct, 86)
-        XCTAssertEqual(Set(report.readingIssues?.keys ?? [:].keys), ["Claude", "Codex", "Antigravity", "Muse", "Notion", "Kie"])
+        XCTAssertEqual(Set(report.readingIssues?.keys ?? [:].keys), ["Claude", "Codex", "Antigravity", "Muse", "Notion", "Kie", "DeepSeek"])
         XCTAssertEqual(report.readingIssues?["Claude"]?.kind, .readFailed)
         XCTAssertEqual(report.billing.first?.readingIssue?.kind, .readFailed)
 
@@ -189,6 +205,14 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertTrue(claude.contains("Cowork 11%"))
         XCTAssertTrue(try XCTUnwrap(DmitHubProvider.sourceInfo(try XCTUnwrap(quota.channel("muse")))).contains("31B tokens left"))
         XCTAssertNil(DmitHubProvider.sourceInfo(try XCTUnwrap(quota.channel("kie"))))
+    }
+
+    func testABalanceKeepsItsRowWhenTheHubReadsItUnderAnotherKey() throws {
+        let read = try DmitQuota.parse(Data(Self.sample.utf8))
+        let channel = try XCTUnwrap(read.channel("deepseek"))
+        let signedOut = try DmitQuota.parse(Data(#"{"providers": {"deepseek": {"available": false, "account_key": "deepseek:signed-out"}}}"#.utf8))
+        XCTAssertEqual(DmitHubProvider.pool(channel).id, DmitHubProvider.pool(try XCTUnwrap(signedOut.channel("deepseek"))).id)
+        XCTAssertNotEqual(DmitHubProvider.pool(channel).id, DmitHubProvider.pool(try XCTUnwrap(read.channel("kie"))).id)
     }
 
     func testAccountIDsNeverCarryTheHubsKey() throws {

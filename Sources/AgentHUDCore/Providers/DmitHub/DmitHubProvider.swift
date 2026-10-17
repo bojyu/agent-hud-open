@@ -12,7 +12,9 @@ public actor DmitHubProvider: UsageProvider {
 
     /// Each hub channel's vendor, as rows and the vendor catalog name it.
     static let vendors = ["claude": "Claude", "codex": "Codex", "antigravity": "Antigravity", "muse": "Muse", "notion": "Notion",
-                          "kie": "Kie"]
+                          "kie": "Kie", "deepseek": "DeepSeek"]
+    /// The channels that are a balance, with no quota window: each is one API-billed row whose balance the HUD shows.
+    static let balanceChannels: Set<String> = ["kie", "deepseek"]
 
     private let base: URL
     private let authorization: @Sendable () -> String?
@@ -113,11 +115,13 @@ public actor DmitHubProvider: UsageProvider {
             let issue = failure.map(ReadingIssue.readFailed) ?? Self.issue(channel)
             if let issue { issues[vendor] = issue }
             if let plan = channel.plan { subscriptions[vendor] = plan }
-            if channel.name == "kie" {
+            if Self.balanceChannels.contains(channel.name) {
                 billing.append(APIBilling(vendor: vendor, balances: channel.creditsRemaining.map {
-                    [AccountBalance(currency: "credits", total: Decimal($0), granted: 0, toppedUp: 0)]
+                    [AccountBalance(currency: channel.creditsCurrency ?? "credits", total: Self.decimal($0),
+                                    granted: Self.decimal(channel.creditsGranted ?? 0),
+                                    toppedUp: Self.decimal(channel.creditsToppedUp ?? 0))]
                 } ?? [], isAvailable: channel.creditsRemaining.map { $0 > 0 }, updatedAt: channel.fetchedAt ?? last.at,
-                    notice: issue?.reason, readingIssue: issue))
+                    notice: issue?.reason, readingIssue: issue, billingPool: Self.pool(channel)))
                 continue
             }
             let account = Self.account(channel)
@@ -134,6 +138,11 @@ public actor DmitHubProvider: UsageProvider {
         let descriptors = rows.map { row in
             AgentDescriptor(id: row.id, vendor: row.vendor, model: row.label, shortModel: row.shortLabel, source: Self.source,
                             enabled: true, account: Self.account(row.channel))
+        } + last.quota.channels.filter { Self.balanceChannels.contains($0.name) && $0.creditsRemaining != nil }.map { channel in
+            // The balance's own row, which the HUD lists the balance under.
+            let pool = Self.pool(channel)
+            return AgentDescriptor(id: pool.windowID("balance"), vendor: Self.vendors[channel.name] ?? channel.name,
+                                   model: L10n.text("余额", "Balance"), source: Self.source, enabled: true, billingPool: pool)
         }
         let notices = issues.mapValues(\.reason)
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: [], discoveredAgents: descriptors, consumers: [],
@@ -188,6 +197,16 @@ public actor DmitHubProvider: UsageProvider {
         let vendor = vendors[channel.name] ?? channel.name
         return ProviderAccount.identified(provider: vendor, user: channel.accountKey ?? "dmit:" + channel.name, workspace: nil)!
     }
+
+    /// The API account a balance channel bills. The hub reads one account per channel, so the pool is the channel's own:
+    /// a new key, or a channel read before it had one, keeps the same row and balance rather than leaving a second one.
+    static func pool(_ channel: DmitQuota.Channel) -> BillingPool {
+        BillingPool(provider: vendors[channel.name] ?? channel.name, realm: "dmit", product: .api,
+                    scope: RecordCoding.hash(["dmit:" + channel.name]), evidence: .account, entitlement: "balance")
+    }
+
+    /// A reading as a decimal, to the cent the hub rounds it to.
+    static func decimal(_ value: Double) -> Decimal { Decimal(string: String(format: "%.2f", value)) ?? Decimal(value) }
 
     /// A channel the hub could not read on its last pass keeps its last values, held back from alerts and levels.
     static func issue(_ channel: DmitQuota.Channel) -> ReadingIssue? {
