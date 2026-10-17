@@ -103,6 +103,9 @@ final class ScreenHUD {
     private var capsuleTimer: Timer?
     /// When the last plain click on the panel landed: the next within the double-click interval opens the usage panel.
     private var lastClickAt: Date?
+    /// The panel folding or unfolding, which is animated also on a dock that separates its agents, whose cards
+    /// otherwise move on their own while the strip stands still.
+    private var animatesFold = false
     /// The user is typing into the island. It stays open under their hands, wherever the pointer goes, until they stop.
     private var typing = false
     private var modifierWatch: Timer?
@@ -438,7 +441,7 @@ final class ScreenHUD {
     // MARK: Capsule
 
     /// How long the pointer rests on the folded panel before it unfolds, and how long after it leaves the panel folds.
-    static let capsuleRestDelay: TimeInterval = 1.5
+    static let capsuleRestDelay: TimeInterval = 0.6
     static let capsuleFoldDelay: TimeInterval = 0.8
 
     /// This screen's Simple panel folds to its rings alone at rest (`DesktopApplication.simpleCapsule`).
@@ -475,12 +478,19 @@ final class ScreenHUD {
                 }
                 self.stripRevealed = unfolds
                 self.lastClickAt = nil
-                self.apply(animated: true)
+                self.fold(animated: true)
                 self.samplePointer()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         capsuleTimer = timer
+    }
+
+    /// Draws the panel folded or unfolded as `stripRevealed` now says, animated on every dock.
+    private func fold(animated: Bool) {
+        animatesFold = !machine.isOpen && activeAlert == nil
+        defer { animatesFold = false }
+        apply(animated: animated)
     }
 
     /// A click on the panel. A folding panel unfolds at a click while folded and opens the usage panel at a double click
@@ -491,7 +501,7 @@ final class ScreenHUD {
             capsuleTimer?.invalidate()
             capsuleTimer = nil
             stripRevealed = true
-            apply(animated: true)
+            fold(animated: true)
             return
         }
         let now = Date()
@@ -1254,7 +1264,7 @@ final class ScreenHUD {
         let cardMoves = !agentMarks.isEmpty && previewPlacement == nil && geometry.edge == previousGeometry.edge
             && geometry.mode == previousGeometry.mode && geometry.screenFrame == previousGeometry.screenFrame
             && !reducesMotion
-        let animated = animated && geometry.edge == previousGeometry.edge && agentMarks.isEmpty
+        let animated = animated && geometry.edge == previousGeometry.edge && (agentMarks.isEmpty || animatesFold)
             && geometry.mode == previousGeometry.mode && geometry.screenFrame == previousGeometry.screenFrame
             && !reducesMotion
         var root = makeRoot(open: open, animated: animated)

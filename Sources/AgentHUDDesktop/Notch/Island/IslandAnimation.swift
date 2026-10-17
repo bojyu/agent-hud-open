@@ -4,9 +4,14 @@ import AgentHUDCore
 
 /// The surface, its glow and the canvas cleanup share one finite transition.
 enum IslandAnimation {
-    static let duration: TimeInterval = 0.4
-    static let curve = Animation.timingCurve(0.2, 0.8, 0.2, 1, duration: duration)
-    static var mediaCurve: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1) }
+    static let duration: TimeInterval = 0.45
+    /// A soft start and a long settle, so a panel eases out of its place rather than snapping out of it. SwiftUI's
+    /// curve and Core Animation's are the same one, so the window and what it draws move together.
+    private static let points: (Double, Double, Double, Double) = (0.32, 0.72, 0, 1)
+    static let curve = Animation.timingCurve(points.0, points.1, points.2, points.3, duration: duration)
+    static var mediaCurve: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: Float(points.0), Float(points.1), Float(points.2), Float(points.3))
+    }
 
     /// Cross-fades what `layer` draws now into what it is given next, on the island's curve: a change of look in layers
     /// that are drawn for one ground and do not fade with a colour, such as a blur, a dock's marks or a reminder's bot.

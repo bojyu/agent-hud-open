@@ -20,6 +20,7 @@ struct SimpleMeterView: View {
     /// Glass drawn as its stand-in, in a preview or a picture of the panel.
     @Environment(\.drawsGlassStandIn) private var glassStandIn
     @Environment(\.botLogos) private var botLogos
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var theme: Theme { look.theme }
 
@@ -43,6 +44,9 @@ struct SimpleMeterView: View {
         }
         .padding(margin, SimpleMeterConfig.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        // A folding panel's numbers come and go with the panel growing round them, on the island's curve, whatever the
+        // island holds still around the figures.
+        .animation(reduceMotion ? nil : IslandAnimation.curve, value: config.showsNumbers)
         // The marks take the artwork made for the panel's surface, also in a window set to the other scheme.
         .environment(\.colorScheme, look.colorScheme)
         .accessibilityElement(children: .combine)
@@ -74,6 +78,7 @@ struct SimpleMeterView: View {
                     .lineLimit(1)
                     .fixedSize()
                     .frame(width: config.edge.isHorizontal ? config.labelWidth(item) : config.labelColumn, alignment: .trailing)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .leading)))
             }
         }
         .accessibilityLabel("\(item.vendor) \(item.label)")
