@@ -134,13 +134,19 @@ final class IslandController {
     /// screen at all still gets one, so the app has somewhere to draw the moment a display appears.
     private func rebuild() {
         ScreenIdentity.forgetKeys()
-        let screens = Self.shownScreens(NSScreen.screens)
+        let screens = Self.shownScreens(NSScreen.screens, choice: settings.settings.hudDisplay)
         rebuild(keys: screens.isEmpty ? ["screen:none"] : screens.map { ScreenIdentity.key(for: $0) }, screens: screens)
     }
 
-    /// The displays that get a HUD: every one, or with `DesktopApplication.builtInDisplayOnly` the Mac's own display,
-    /// else the main one while the lid is closed, so there is always one.
-    static func shownScreens(_ screens: [NSScreen]) -> [NSScreen] {
+    /// The displays chosen in Settings get a HUD again (`Settings.hudDisplay`).
+    func rebuildScreens() { rebuild() }
+
+    /// The displays that get a HUD: the one display `choice` names while it is attached, every display for
+    /// `Settings.hudDisplayAll`, and otherwise the default: every display, or with `DesktopApplication.builtInDisplayOnly`
+    /// the Mac's own display, else the main one while the lid is closed, so there is always one.
+    static func shownScreens(_ screens: [NSScreen], choice: String? = nil) -> [NSScreen] {
+        if choice == Settings.hudDisplayAll { return screens }
+        if let choice, let chosen = screens.first(where: { ScreenIdentity.key(for: $0) == choice }) { return [chosen] }
         guard DesktopApplication.builtInDisplayOnly else { return screens }
         let builtIn = screens.filter { screen in
             (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)

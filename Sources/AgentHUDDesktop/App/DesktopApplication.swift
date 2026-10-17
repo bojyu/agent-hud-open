@@ -110,6 +110,9 @@ public final class DesktopApplication {
         trackChanges({ [weak self] in
             self?.settings.settings.appearance
         }, onChange: { [weak self] in self?.applyAppearance() })
+        trackChanges({ [weak self] in
+            self?.settings.settings.hudDisplay
+        }, onChange: { [weak self] in self?.notch?.rebuildScreens() })
         // Under Match screen a screen's new look, its style draft's included, reaches the windows on that screen. The
         // settings and the style drafts (any one of them read reads them all) are read apart from the displays as well,
         // so the watch is armed with no display attached too; a window whose look has not changed is left as it is.

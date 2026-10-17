@@ -79,6 +79,24 @@ struct ScreensPane: View {
         )
     }
 
+    /// Where the HUD is shown (`Settings.hudDisplay`): the default, every display, or one of those attached. The
+    /// default is written as what it does here; an empty value stands for it.
+    private var hudDisplayOptions: [SegmentOption<String>] {
+        let all = AgentHUDCore.Settings.hudDisplayAll
+        var options = [DesktopApplication.builtInDisplayOnly
+            ? SegmentOption(value: "", label: L10n.text("内置屏（默认）", "Built-in display (default)"))
+            : SegmentOption(value: "", label: L10n.text("所有显示器（默认）", "Every display (default)"))]
+        if DesktopApplication.builtInDisplayOnly { options.append(SegmentOption(value: all, label: L10n.text("所有显示器", "Every display"))) }
+        return options + screens.map { SegmentOption(value: $0.key, label: $0.name) }
+    }
+
+    private var hudDisplay: Binding<String> {
+        Binding(
+            get: { settings.settings.hudDisplay ?? "" },
+            set: { value in settings.update { $0.hudDisplay = value.isEmpty ? nil : value } }
+        )
+    }
+
     /// The panel as this screen's settings and its layout's agents draw it, laid along the top edge whichever edge it is
     /// parked on.
     private var previewMeter: SimpleMeterConfig {
@@ -97,6 +115,11 @@ struct ScreensPane: View {
         SettingsSection(title: L10n.text("屏幕", "Screens"),
                         subtitle: L10n.text("每块屏幕单独设置。", "Set each display on its own."), theme: theme) {
             if screens.count > 1 {
+                SettingRow(label: L10n.text("面板显示在", "Show HUD on")) {
+                    SelectionMenu(title: L10n.text("面板显示在", "Show HUD on"), options: hudDisplayOptions,
+                                  selection: hudDisplay, theme: theme, width: 200)
+                }
+                SettingsDivider(theme: theme)
                 SettingRow(label: L10n.text("显示器", "Display")) {
                     SelectionMenu(title: L10n.text("显示器", "Display"),
                                   options: screens.map { SegmentOption(value: $0.key, label: $0.name) },

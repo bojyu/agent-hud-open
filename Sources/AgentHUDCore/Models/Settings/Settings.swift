@@ -118,6 +118,10 @@ public struct Settings: Hashable, Codable, Sendable {
     public static let approvalWaitChoices = [1, 3, 5, 10, 30, 60]
     public var launchAtLogin: Bool = true
     public var showMenuBarIcon: Bool = true
+    /// The displays that show the HUD: nil for the host's default, `hudDisplayAll` for every display, otherwise one
+    /// display's key (`ScreenIdentity.key`), which falls back to the default while that display is not attached.
+    public var hudDisplay: String?
+    public static let hudDisplayAll = "all"
     public var appearance: AppearanceMode = .system
     /// Each window, and the menu-bar menu, as dark or light as the HUD of the screen it is on (`ScreenPlacement`'s look)
     /// instead of `appearance`.
@@ -147,7 +151,7 @@ public struct Settings: Hashable, Codable, Sendable {
         case requiresOptionToOpen, openImmediatelyAtTop, hoverDelayMs, collapseDelayMs, showResetCountdown
         case showIslandQuota, showIslandTokens, showIslandSessions, botLogos, hiddenAccountIDs
         case liveStatusPreferences, disabledLiveStatusSources, readCopilotQuota, clientHooks, agentTools, approvalWaitMinutes
-        case launchAtLogin, showMenuBarIcon, appearance, appearanceFollowsScreen, language, screens, screenGlow, providerOrder
+        case launchAtLogin, showMenuBarIcon, hudDisplay, appearance, appearanceFollowsScreen, language, screens, screenGlow, providerOrder
     }
 
     public init(from decoder: Decoder) throws {
@@ -200,6 +204,7 @@ public struct Settings: Hashable, Codable, Sendable {
             .flatMap { Self.approvalWaitChoices.contains($0) ? $0 : nil } ?? d.approvalWaitMinutes
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
         showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? d.showMenuBarIcon
+        hudDisplay = try c.decodeIfPresent(String.self, forKey: .hudDisplay)
         // An appearance saved by a newer build falls back to the default instead of failing the whole decode.
         appearance = (try? c.decodeIfPresent(AppearanceMode.self, forKey: .appearance)) ?? d.appearance
         appearanceFollowsScreen = (try? c.decodeIfPresent(Bool.self, forKey: .appearanceFollowsScreen))
@@ -242,6 +247,7 @@ public struct Settings: Hashable, Codable, Sendable {
         try c.encode(approvalWaitMinutes, forKey: .approvalWaitMinutes)
         try c.encode(launchAtLogin, forKey: .launchAtLogin)
         try c.encode(showMenuBarIcon, forKey: .showMenuBarIcon)
+        try c.encodeIfPresent(hudDisplay, forKey: .hudDisplay)
         try c.encode(appearance, forKey: .appearance)
         try c.encode(appearanceFollowsScreen, forKey: .appearanceFollowsScreen)
         try c.encode(language, forKey: .language)
