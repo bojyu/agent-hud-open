@@ -93,7 +93,14 @@ struct ScreensPane: View {
     private var hudDisplay: Binding<String> {
         Binding(
             get: { settings.settings.hudDisplay ?? "" },
-            set: { value in settings.update { $0.hudDisplay = value.isEmpty ? nil : value } }
+            set: { value in
+                settings.update { $0.hudDisplay = value.isEmpty ? nil : value }
+                // The settings below go on to the display the HUD now shows on, so they are the ones it draws with.
+                if let shown = IslandController.shownScreens(NSScreen.screens, choice: value.isEmpty ? nil : value).first,
+                   value != AgentHUDCore.Settings.hudDisplayAll {
+                    selected = ScreenIdentity.key(for: shown)
+                }
+            }
         )
     }
 

@@ -508,12 +508,17 @@ final class ScreenHUD {
     /// Hovering opens the panel, unless the user asked for Option as well. Typing keeps it open either way.
     private func reevaluateHover() {
         guard !dragSurface.isPressed, previewPlacement == nil else { return }
-        // A folding Simple panel opens on a double click alone; the hover only keeps the panel it opened.
-        let opens = foldsIntoCapsule
-            ? typing || pointerInside && (hoverOpens || machine.isOpen)
-            : ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
-                                     typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
-                                     optionDown: NSEvent.modifierFlags.contains(.option))
+        // A folding Simple panel opens its usage panel on a double click alone; the hover only keeps the panel it opened.
+        // One that separates its agents opens a mark's one-line peek on a hover as ever, once the rest has unfolded it.
+        let opens = if foldsIntoCapsule, !placement.separatesAgents {
+            typing || pointerInside && (hoverOpens || machine.isOpen)
+        } else if foldsIntoCapsule, !stripRevealed, !machine.isOpen {
+            typing
+        } else {
+            ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
+                                   typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
+                                   optionDown: NSEvent.modifierFlags.contains(.option))
+        }
         let canFinishOpening = switch machine.state {
         case .opening: true
         // A handoff to Settings or Stats deliberately stays collapsed until the pointer leaves.

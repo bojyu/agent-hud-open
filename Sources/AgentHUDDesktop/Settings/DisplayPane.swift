@@ -7,8 +7,16 @@ struct DisplayPane: View {
     let store: UsageStore
     let theme: Theme
     /// Which display the panes below are editing. Owned here so the glow preview can show that screen's
-    /// mode rather than always the notch.
-    @State private var screen: String = ScreensPane.attached().first?.key ?? ""
+    /// mode rather than always the notch. It starts on the display the HUD is shown on (`Settings.hudDisplay`).
+    @State private var screen: String
+
+    init(settings: SettingsStore, store: UsageStore, theme: Theme) {
+        self.settings = settings
+        self.store = store
+        self.theme = theme
+        let shown = IslandController.shownScreens(NSScreen.screens, choice: settings.settings.hudDisplay).first
+        _screen = State(initialValue: shown.map { ScreenIdentity.key(for: $0) } ?? ScreensPane.attached().first?.key ?? "")
+    }
     /// Reduce Transparency and macOS's own light or dark setting, which a screen's look is resolved from as well as from
     /// its settings, and which SwiftUI does not see there (`SettingsStore.effectiveLook(on:)`). Both are held here so
     /// that the look is resolved again, and every preview below drawn again, as either is switched: macOS's setting too

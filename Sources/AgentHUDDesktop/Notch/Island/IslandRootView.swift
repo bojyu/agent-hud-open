@@ -534,9 +534,10 @@ struct IslandRootView: View {
                 .onPreferenceChange(PanelHeightKey.self, perform: onContentHeight)
                 .transition(detailTransition)
         } else if isOpen, detached, !pinned, let peek {
+            // A folding Simple panel opens an agent's card at a double click, on its peek as on its mark.
             AgentPeekView(peek: peek)
                 .contentShape(Rectangle())
-                .onTapGesture(perform: onPin)
+                .onTapGesture(count: DesktopApplication.simpleCapsule ? 2 : 1, perform: onPin)
                 .id(peek.vendor)
         } else if isOpen, let store {
             HoverPanelView(store: store, onOpenStats: onOpenStats, onOpenSettings: onOpenSettings,
