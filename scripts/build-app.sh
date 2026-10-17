@@ -45,6 +45,12 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 printf 'APPL????' > "$APP_DIR/Contents/PkgInfo"
-codesign --force --sign - --identifier app.agenthud.open "$APP_DIR" >&2
+# A stable identity keeps the app the same app to the keychain across builds, so an "Always Allow" lasts: the one named
+# in AGENT_HUD_SIGN_IDENTITY, else a local "Agent HUD Local" certificate when there is one, else an ad-hoc signature.
+SIGN_IDENTITY="${AGENT_HUD_SIGN_IDENTITY:-}"
+if [ -z "$SIGN_IDENTITY" ] && security find-identity -p codesigning 2>/dev/null | grep -q '"Agent HUD Local"'; then
+  SIGN_IDENTITY="Agent HUD Local"
+fi
+codesign --force --sign "${SIGN_IDENTITY:--}" --identifier app.agenthud.open "$APP_DIR" >&2
 codesign --verify --deep --strict "$APP_DIR" >&2
 printf '%s\n' "$APP_DIR"
