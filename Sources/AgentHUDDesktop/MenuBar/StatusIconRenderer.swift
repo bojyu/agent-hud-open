@@ -1,14 +1,16 @@
 import AppKit
 import AgentHUDCore
 
-/// 22×11 notch silhouette: 1.5 px outline in the label color, filled with the same gradient as the glow.
+/// 22×11 notch silhouette, or a 14 pt ring for a copy held to the Simple panel: 1.5 px outline in the label color, filled
+/// with the same gradient as the glow.
 enum StatusIconRenderer {
-    static let size = NSSize(width: 22, height: 11)
+    static var size: NSSize { ScreenPlacement.onlyMode == .simple ? NSSize(width: 14, height: 14) : NSSize(width: 22, height: 11) }
 
     static func image(stops: [GradientStop]) -> NSImage {
+        let ring = ScreenPlacement.onlyMode == .simple
         let image = NSImage(size: size, flipped: false) { rect in
             let inset = rect.insetBy(dx: 0.75, dy: 0.75)
-            let path = NSBezierPath(roundedRect: inset, xRadius: 4, yRadius: 4)
+            let path = ring ? NSBezierPath(ovalIn: inset) : NSBezierPath(roundedRect: inset, xRadius: 4, yRadius: 4)
             NSGraphicsContext.saveGraphicsState()
             path.addClip()
             var resolved = stops

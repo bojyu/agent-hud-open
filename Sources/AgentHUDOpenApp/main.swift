@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let options = DesktopLaunchOptions.parse(CommandLine.arguments)
+        // Only the Simple panel: no island at the notch, no glow, no logo queue, on every display.
+        ScreenPlacement.onlyMode = .simple
         if let directory = options.snapshotDirectory {
             Task { @MainActor in
                 await SnapshotRunner.run(language: options.language, into: directory)
@@ -41,11 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if options.demo, !settings.agents.contains(where: { row in DemoData.agents.contains { $0.id == row.id } }) {
             settings.updateAgents { _ in DemoData.everyAgent }
         }
-        let store = UsageAssembly.store(settings: settings, ledger: options.demo ? nil : .open())
-        if !options.demo, let executable = Bundle.main.executableURL {
-            SessionObservers.configure(executable: executable, enabled: settings.settings.clientHooks)
-        }
-        let desktop = DesktopApplication(options: options, settings: settings, store: store)
+        // Every reading comes from the Dmit quota hub; nothing on this Mac is read, and no client gets a hook.
+        let store = options.demo ? UsageAssembly.store(settings: settings, ledger: nil)
+            : UsageAssembly.dmitStore(settings: settings, ledger: .open())
+        let desktop = DesktopApplication(options: options, settings: settings, store: store, observesLocalClients: false)
         self.desktop = desktop
         desktop.start()
     }

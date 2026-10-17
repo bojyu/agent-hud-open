@@ -8,6 +8,9 @@ public final class DesktopApplication {
     public let settings: SettingsStore
     public let store: UsageStore
     private let options: DesktopLaunchOptions
+    /// Whether this copy watches the clients on this Mac: their hooks and observers, the approvals and questions they ask,
+    /// and the Claude desktop app's asks. Off when every reading comes from elsewhere, so nothing is written to a client.
+    private let observesLocalClients: Bool
     private let additionalSettingsPages: [DesktopSettingsPage]
     private let experimentalSettings: [DesktopSettingsSection]
     private let additionalMenuItems: () -> [NSMenuItem]
@@ -49,8 +52,10 @@ public final class DesktopApplication {
                 experimentalSettings: [DesktopSettingsSection] = [],
                 additionalMenuItems: @escaping () -> [NSMenuItem] = { [] },
                 additionalHUDControls: @escaping @MainActor (@escaping @MainActor () -> Void) -> AnyView = { _ in AnyView(EmptyView()) },
-                onIslandEvents: ((IslandEventTracker.Update, UsageReport, Date) -> Void)? = nil) {
+                onIslandEvents: ((IslandEventTracker.Update, UsageReport, Date) -> Void)? = nil,
+                observesLocalClients: Bool = true) {
         self.options = options
+        self.observesLocalClients = observesLocalClients
         self.settings = settings
         self.store = store
         self.additionalSettingsPages = additionalSettingsPages
@@ -90,8 +95,11 @@ public final class DesktopApplication {
             quit: { NSApp.terminate(nil) }
         )
         self.statusItem = statusItem
-        HotKeyCenter.shared.register(id: 1, keyCode: HotKeyCenter.keyH, modifiers: HotKeyCenter.commandOption) { [weak self] in
-            self?.toggleGlow()
+        // The glow belongs to the island and the logo queue; a copy held to Simple has none to hide.
+        if ScreenPlacement.onlyMode != .simple {
+            HotKeyCenter.shared.register(id: 1, keyCode: HotKeyCenter.keyH, modifiers: HotKeyCenter.commandOption) { [weak self] in
+                self?.toggleGlow()
+            }
         }
         trackChanges({ [weak self] in
             self?.settings.settings.appearance
@@ -141,7 +149,7 @@ public final class DesktopApplication {
         trackChanges({ [weak self] in
             self?.settings.settings.clientHooks
         }, onChange: { [weak self] in
-            guard let self, !self.options.demo, let executable = Bundle.main.executableURL else { return }
+            guard let self, !self.options.demo, self.observesLocalClients, let executable = Bundle.main.executableURL else { return }
             SessionObservers.configure(executable: executable, enabled: self.settings.settings.clientHooks)
             self.antigravityApprovals.setEnabled(self.settings.settings.clientHooks)
             self.deepseekQuestions.setEnabled(self.settings.settings.clientHooks)
@@ -149,13 +157,14 @@ public final class DesktopApplication {
         })
         // A client run for the first time creates its directory, and its observer goes in with the next report
         // rather than at the next launch.
-        if !options.demo { observedClients = SessionObservers.observedClients() }
+        if !options.demo, observesLocalClients { observedClients = SessionObservers.observedClients() }
         trackChanges({ [weak self] in
             _ = self?.store.report
         }, onChange: { [weak self] in
-            self?.installObserversForNewClients()
-            if let self { self.codexDesktopApprovals.updateSessions(self.store.report?.sessions ?? []) }
-            self?.showClaudeDesktopAsks()
+            guard let self, self.observesLocalClients else { return }
+            self.installObserversForNewClients()
+            self.codexDesktopApprovals.updateSessions(self.store.report?.sessions ?? [])
+            self.showClaudeDesktopAsks()
         })
         trackChanges({ [weak self] in
             _ = self?.store.report
@@ -170,7 +179,8 @@ public final class DesktopApplication {
         if let name = options.demoScript {
             demoScript = DemoScriptRunner.load(name, store: store, island: notch)
         }
-        if !options.demo { PermissionRequests.shared.start() } else if demoScript == nil { PermissionRequests.shared.seedDemo() }
+        if options.demo { if demoScript == nil { PermissionRequests.shared.seedDemo() } }
+        else if observesLocalClients { PermissionRequests.shared.start() }
         if options.toolChannel != .never {
             // A demo shares the data directory with the real copy, so it takes the tool calls only when asked to; any
             // other launch takes them while the switch in Settings → Experimental is on. A screen's panel is drawn and
@@ -194,7 +204,7 @@ public final class DesktopApplication {
             toolChannel = channel
             channel.start()
         }
-        if !options.demo {
+        if !options.demo, observesLocalClients {
             antigravityApprovals.setEnabled(settings.settings.clientHooks)
             deepseekQuestions.setEnabled(settings.settings.clientHooks)
             codexDesktopApprovals.updateSessions(store.report?.sessions ?? [])

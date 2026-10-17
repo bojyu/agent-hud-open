@@ -307,10 +307,12 @@ final class StatusItemController: NSObject {
                                            isEnabled: false))
         }
         entries.append(.separator)
-        entries.append(action(
-            store.glowHidden ? L10n.text("显示灵动岛光晕", "Show notch glow") : L10n.text("隐藏灵动岛光晕", "Hide notch glow"),
-            key: "h", modifiers: [.command, .option]) { [weak self] in self?.actions.toggleGlow() })
-        entries.append(.separator)
+        if ScreenPlacement.onlyMode != .simple {
+            entries.append(action(
+                store.glowHidden ? L10n.text("显示灵动岛光晕", "Show notch glow") : L10n.text("隐藏灵动岛光晕", "Hide notch glow"),
+                key: "h", modifiers: [.command, .option]) { [weak self] in self?.actions.toggleGlow() })
+            entries.append(.separator)
+        }
         entries.append(action(L10n.text("设置…", "Settings…"), key: ",", modifiers: [.command]) { [weak self] in
             self?.actions.openSettings()
         })

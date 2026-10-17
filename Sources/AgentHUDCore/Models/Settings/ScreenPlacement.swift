@@ -100,7 +100,12 @@ public struct ScreenPlacement: Hashable, Codable, Sendable {
     public static let standardGlassTransparency = 0.5
     /// A solid surface at first: opaque, as the HUD has always been.
     public static let standardSolidTransparency = 0.0
-    public var mode: HUDMode
+    /// The one mode every screen takes when set, whatever was saved, defaulted or proposed for it; nil leaves each screen
+    /// its own. A host sets it once at launch, before any placement is read.
+    nonisolated(unsafe) public static var onlyMode: HUDMode?
+    public var mode: HUDMode {
+        didSet { if let only = Self.onlyMode, mode != only { mode = only } }
+    }
     public var edge: HUDEdge
     /// The queue's centre along its edge, as a fraction of that edge's length, so it survives a
     /// resolution change.
@@ -155,7 +160,7 @@ public struct ScreenPlacement: Hashable, Codable, Sendable {
         glassTransparency: Double = ScreenPlacement.standardGlassTransparency,
         solidTransparency: Double = ScreenPlacement.standardSolidTransparency
     ) {
-        self.mode = mode
+        self.mode = Self.onlyMode ?? mode
         self.edge = edge
         self.offset = Self.clamp(offset, to: 0...1)
         self.logoSize = Self.clamp(logoSize, to: Self.logoSizeRange)
@@ -175,8 +180,10 @@ public struct ScreenPlacement: Hashable, Codable, Sendable {
     }
 
     /// A display's starting point: a notched screen keeps its island, anything else shows the queue, both dark and solid.
+    /// With `onlyMode` set, every display starts in that mode on the left edge.
     public static func `default`(hasNotch: Bool) -> ScreenPlacement {
-        ScreenPlacement(mode: hasNotch ? .notch : .logos)
+        if let only = onlyMode { return ScreenPlacement(mode: only, edge: .left) }
+        return ScreenPlacement(mode: hasNotch ? .notch : .logos)
     }
 
     private static func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
@@ -192,9 +199,11 @@ public struct ScreenPlacement: Hashable, Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = ScreenPlacement()
+        let mode = (try? c.decodeIfPresent(HUDMode.self, forKey: .mode)) ?? d.mode
         self.init(
-            mode: (try? c.decodeIfPresent(HUDMode.self, forKey: .mode)) ?? d.mode,
-            edge: (try? c.decodeIfPresent(HUDEdge.self, forKey: .edge)) ?? d.edge,
+            mode: mode,
+            // A screen saved at the notch had no edge of its own; under `onlyMode` it starts on the left, as a new one does.
+            edge: Self.onlyMode != nil && mode == .notch ? .left : (try? c.decodeIfPresent(HUDEdge.self, forKey: .edge)) ?? d.edge,
             offset: try c.decodeIfPresent(Double.self, forKey: .offset) ?? d.offset,
             logoSize: try c.decodeIfPresent(Double.self, forKey: .logoSize) ?? d.logoSize,
             logoEdgeDistance: try c.decodeIfPresent(Double.self, forKey: .logoEdgeDistance) ?? d.logoEdgeDistance,

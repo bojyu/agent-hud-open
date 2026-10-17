@@ -29,4 +29,17 @@ public enum UsageAssembly {
         if let report = retained.initialReport { store.replace(report: report) }
         return store
     }
+
+    /// The store over the Dmit quota hub alone (`DmitHubProvider.standard`): every reading comes from the hub, none from
+    /// this Mac's clients. Readings go to `ledger`, so burn rates and cap hits are kept, and the restart copy has its own
+    /// file, so a report from the installed clients never shows in its place.
+    public static func dmitStore(settings: SettingsStore, ledger: UsageLedger,
+                                 hooks: UsageCollectionHooks = UsageCollectionHooks()) -> UsageStore {
+        let retained = RetainedUsageProvider(provider: DmitHubProvider.standard(ledger: ledger),
+                                             cacheURL: AppSupport.directory.appendingPathComponent("last-dmit-report.json"))
+        let store = UsageStore(provider: retained, settings: settings, hooks: hooks)
+        store.ledger = ledger
+        if let report = retained.initialReport { store.replace(report: report) }
+        return store
+    }
 }

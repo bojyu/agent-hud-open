@@ -23,28 +23,38 @@ struct OnboardingView: View {
             Color.clear.frame(height: 12)
             ZStack(alignment: .top) {
                 LinearGradient(colors: [Color(hex: 0x5b6b8c), Color(hex: 0x7c8aa6)], startPoint: .top, endPoint: .bottom)
-                GlowPreview(
-                    appearance: store.glowAppearance(light: false),
-                    settings: settings.settings.glow,
-                    islandSize: CGSize(width: 190, height: 26),
-                    islandRadius: 13,
-                    look: .standard,
-                    scale: 0.9
-                )
+                // The glow belongs to the island; a copy held to the Simple panel shows none.
+                if ScreenPlacement.onlyMode != .simple {
+                    GlowPreview(
+                        appearance: store.glowAppearance(light: false),
+                        settings: settings.settings.glow,
+                        islandSize: CGSize(width: 190, height: 26),
+                        islandRadius: 13,
+                        look: .standard,
+                        scale: 0.9
+                    )
+                }
             }
             .frame(height: 96)
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.text("灵动岛已就绪", "Your notch is ready")).font(.ui(20, .semibold))
-                Text(L10n.text("在灵动岛查看额度和会话，随时掌握用量。", "Keep track of your usage and sessions from the notch."))
+                Text(ScreenPlacement.onlyMode == .simple ? L10n.text("额度面板已就绪", "Your quota panel is ready")
+                     : L10n.text("灵动岛已就绪", "Your notch is ready")).font(.ui(20, .semibold))
+                Text(ScreenPlacement.onlyMode == .simple
+                     ? L10n.text("在屏幕边缘的简约面板查看额度，悬停看一行，点击看详情。",
+                                 "Keep track of your quota from the Simple panel on a screen edge: hover for a line, click for details.")
+                     : L10n.text("在灵动岛查看额度和会话，随时掌握用量。", "Keep track of your usage and sessions from the notch."))
                     .font(.ui(13))
                     .foregroundStyle(theme.secondary)
             }
 
-            VStack(spacing: 6) {
-                ForEach(resolvedSources) { source in
-                    SourceRow(source: source, theme: theme)
+            // The Simple-only copy reads its quotas from the Dmit hub, so this Mac's clients are no source of its.
+            if ScreenPlacement.onlyMode != .simple {
+                VStack(spacing: 6) {
+                    ForEach(resolvedSources) { source in
+                        SourceRow(source: source, theme: theme)
+                    }
                 }
             }
 

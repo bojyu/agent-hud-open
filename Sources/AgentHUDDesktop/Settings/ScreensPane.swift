@@ -104,15 +104,20 @@ struct ScreensPane: View {
                 }
                 SettingsDivider(theme: theme)
             }
-            SettingRow(label: L10n.text("HUD 形态", "HUD"), subtitle: subtitle) {
-                SegmentedPills(options: [
-                    SegmentOption(value: HUDMode.notch, label: L10n.text("刘海", "Notch")),
-                    SegmentOption(value: HUDMode.simple, label: L10n.text("简约", "Simple")),
-                    SegmentOption(value: HUDMode.logos, label: L10n.text("动态", "Dynamic")),
-                ], selection: modeBinding, theme: theme)
+            // A copy held to one mode has no other to offer, and no notch to drag.
+            if ScreenPlacement.onlyMode == nil {
+                SettingRow(label: L10n.text("HUD 形态", "HUD"), subtitle: subtitle) {
+                    SegmentedPills(options: [
+                        SegmentOption(value: HUDMode.notch, label: L10n.text("刘海", "Notch")),
+                        SegmentOption(value: HUDMode.simple, label: L10n.text("简约", "Simple")),
+                        SegmentOption(value: HUDMode.logos, label: L10n.text("动态", "Dynamic")),
+                    ], selection: modeBinding, theme: theme)
+                }
             }
-            Text(L10n.text("直接拖动可见的 HUD。拖动刘海会切换为「动态」。",
-                           "Drag the visible HUD directly. Dragging the notch switches to Dynamic."))
+            Text(ScreenPlacement.onlyMode == nil
+                 ? L10n.text("直接拖动可见的 HUD。拖动刘海会切换为「动态」。",
+                             "Drag the visible HUD directly. Dragging the notch switches to Dynamic.")
+                 : L10n.text("直接拖动面板，可停靠到屏幕任一边缘。", "Drag the panel to dock it on any screen edge."))
                 .font(.ui(11)).foregroundStyle(theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
