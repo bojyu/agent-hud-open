@@ -8,6 +8,9 @@ import Security
 public actor DmitHubProvider: UsageProvider {
     /// The hub's own collection interval, which reading it any more often would only repeat.
     public static let readInterval: TimeInterval = 120
+    /// A failed request holds nothing back while the last good answer is younger than this: a network that dropped for
+    /// a moment, or a Mac just awake, shows the last readings as they were rather than every channel failed.
+    public static let failureGrace: TimeInterval = 300
     static let source = "Dmit 配额中心"
 
     /// Each hub channel's vendor, as rows and the vendor catalog name it.
@@ -24,11 +27,19 @@ public actor DmitHubProvider: UsageProvider {
     private var last: (at: Date, quota: DmitQuota)?
     /// Why the last request failed; cleared by the next one that succeeds.
     private var failure: String?
+    /// How long after a failed request it is tried again, sooner than the hub's interval.
+    private let retryAfter: TimeInterval
+    private var retryTask: Task<Void, Never>?
+    /// When the retry after a failed request runs, which the collector reads the report again just after.
+    private var retryAt: Date?
 
     /// - base: the hub's address, under which `api/quota` and `api/refresh` are served.
     /// - authorization: the `Authorization` header value, read for every request; nil sends none.
+    /// - retryAfter: how long after a failed request it is tried again.
     init(base: URL, authorization: @escaping @Sendable () -> String?, http: ProviderHTTP = ProviderHTTP(),
-         history: QuotaHistoryStore = QuotaHistoryStore(), clock: @escaping @Sendable () -> Date = { Date() }) {
+         history: QuotaHistoryStore = QuotaHistoryStore(), clock: @escaping @Sendable () -> Date = { Date() },
+         retryAfter: TimeInterval = 30) {
+        self.retryAfter = retryAfter
         self.base = base
         self.authorization = authorization
         self.http = http
@@ -67,6 +78,9 @@ public actor DmitHubProvider: UsageProvider {
             try Task.checkCancellation()
             last = (now, quota)
             failure = nil
+            retryTask?.cancel()
+            retryTask = nil
+            retryAt = nil
             await history.append(Self.rows(quota).compactMap { row in
                 // Only a window the hub read on its last pass is a new reading; a kept value would repeat an old one.
                 guard row.channel.isFresh else { return nil }
@@ -75,7 +89,33 @@ public actor DmitHubProvider: UsageProvider {
         } catch {
             if Task.isCancelled { return }
             failure = L10n.text("无法读取 Dmit 配额中心：", "Dmit quota hub unavailable: ") + error.localizedDescription
+            scheduleRetry()
         }
+    }
+
+    /// Tries a failed request again after `retryAfter`, and again after each that fails, until one succeeds.
+    private func scheduleRetry() {
+        retryTask?.cancel()
+        let delay = retryAfter
+        retryAt = clock().addingTimeInterval(delay)
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            await self?.refreshAccountUsage(historyHours: 24)
+        }
+    }
+
+    /// The report is read again just after a retry, which runs apart from the collector's account steps, so its answer
+    /// is shown as soon as it arrives: once a short request would have, and once the slowest would have.
+    public func sourceChecks() async -> [String: [Date]] {
+        guard let retryAt else { return [:] }
+        return ["": [retryAt.addingTimeInterval(2), retryAt.addingTimeInterval(17)]]
+    }
+
+    /// The failure to show: none while the last good answer is younger than `failureGrace`, which it keeps on screen.
+    private func shownFailure(at now: Date) -> String? {
+        guard let failure, let last else { return failure }
+        return now.timeIntervalSince(last.at) >= Self.failureGrace ? failure : nil
     }
 
     /// Asks the hub to read every channel now, then reads its answer.
@@ -112,7 +152,7 @@ public actor DmitHubProvider: UsageProvider {
         var resetCredits: CodexResetCredits?
         for channel in last.quota.channels {
             guard let vendor = Self.vendors[channel.name] else { continue }
-            let issue = failure.map(ReadingIssue.readFailed) ?? Self.issue(channel)
+            let issue = shownFailure(at: now).map(ReadingIssue.readFailed) ?? Self.issue(channel)
             if let issue { issues[vendor] = issue }
             if let plan = channel.plan { subscriptions[vendor] = plan }
             if Self.balanceChannels.contains(channel.name) {

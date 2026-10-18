@@ -58,9 +58,19 @@ final class DmitHubProviderTests: XCTestCase {
         func set(_ answer: @escaping @Sendable (URLRequest) throws -> Data) { self.answer = answer }
     }
 
-    private func provider(_ hub: Hub, authorization: String? = "Basic Zml4dHVyZQ==") -> DmitHubProvider {
+    /// A clock a test moves on.
+    final class Clock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var time = DmitHubProviderTests.now
+        var now: Date { lock.withLock { time } }
+        func advance(_ seconds: TimeInterval) { lock.withLock { time += seconds } }
+    }
+
+    /// A retry an hour away unless asked for, so a failed request in a test is tried again only when the test means it.
+    private func provider(_ hub: Hub, authorization: String? = "Basic Zml4dHVyZQ==", clock: Clock = Clock(),
+                          retryAfter: TimeInterval = 3600) -> DmitHubProvider {
         DmitHubProvider(base: URL(string: "https://hub.example/quota/")!, authorization: { authorization },
-                        http: ProviderHTTP(send: { try await hub.respond($0) }), clock: { Self.now })
+                        http: ProviderHTTP(send: { try await hub.respond($0) }), clock: { clock.now }, retryAfter: retryAfter)
     }
 
     private static func row(_ report: UsageReport, _ vendor: String, _ window: String) -> UsageSnapshot? {
@@ -157,11 +167,28 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertEqual(report.readingIssues?["Muse"], .readFailed("登录失效"))
     }
 
+    func testAFailureWithinTheGraceKeepsTheLastReadingsAsTheyWere() async throws {
+        let hub = Hub { _ in Data(Self.sample.utf8) }
+        let clock = Clock()
+        let provider = provider(hub, clock: clock)
+        await provider.refreshAccountUsage(historyHours: 24)
+        await hub.set { _ in throw ProviderHTTPError(status: 504) }
+        clock.advance(DmitHubProvider.failureGrace - 10)
+        await provider.refreshAccountUsage(historyHours: 24)
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+
+        XCTAssertEqual(Self.row(report, "Claude", ClaudeUsage.sessionRowId)?.remainingPct, 86)
+        XCTAssertEqual(Set(report.readingIssues?.keys ?? [:].keys), ["Codex"], "only what the hub itself said")
+        XCTAssertNil(report.billing.first?.readingIssue)
+    }
+
     func testFailedRequestKeepsLastReadingAndMarksEveryVendor() async throws {
         let hub = Hub { _ in Data(Self.sample.utf8) }
-        let provider = provider(hub)
+        let clock = Clock()
+        let provider = provider(hub, clock: clock)
         await provider.refreshAccountUsage(historyHours: 24)
         await hub.set { _ in throw ProviderHTTPError(status: 502) }
+        clock.advance(DmitHubProvider.failureGrace)
         await provider.refreshAccountUsage(historyHours: 24)
         let report = try await provider.fetchUsage(agents: [], historyHours: 24)
 
@@ -175,6 +202,23 @@ final class DmitHubProviderTests: XCTestCase {
         await provider.refreshAccountUsage(historyHours: 24)
         let recovered = try await provider.fetchUsage(agents: [], historyHours: 24)
         XCTAssertEqual(Set(recovered.readingIssues?.keys ?? [:].keys), ["Codex"])
+    }
+
+    func testAFailedRequestIsTriedAgainSoonAndTheReportReadAfter() async throws {
+        let hub = Hub { _ in throw ProviderHTTPError(status: 504) }
+        let clock = Clock()
+        let provider = provider(hub, clock: clock, retryAfter: 0.05)
+        await provider.refreshAccountUsage(historyHours: 24)
+        let checks = await provider.sourceChecks()
+        XCTAssertEqual(checks[""]?.count, 2, "the collector reads the report again after the retry")
+        await hub.set { _ in Data(Self.sample.utf8) }
+        try await Task.sleep(for: .milliseconds(400))
+        let requests = await hub.requests.count
+        XCTAssertEqual(requests, 2, "one retry, which succeeded and stopped there")
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(Self.row(report, "Claude", ClaudeUsage.sessionRowId)?.remainingPct, 86)
+        let after = await provider.sourceChecks()
+        XCTAssertTrue(after.isEmpty)
     }
 
     func testNoReadingYetShowsNoWindows() async throws {
