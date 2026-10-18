@@ -32,7 +32,11 @@ final class DmitHubProviderTests: XCTestCase {
       "deepseek": {"available": true, "account_key": "fixture-deepseek",
                    "credits": {"available": true, "remaining": 110.5, "granted": 10.0, "topped_up": 100.5, "currency": "CNY",
                                "remaining_kind": "balance", "resets_at": null},
-                   "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"}
+                   "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"},
+      "openrouter": {"available": true, "account_key": "fixture-openrouter",
+                     "credits": {"available": true, "used": 14.5, "total": 20.0, "remaining": 5.5, "granted": 0.0,
+                                 "topped_up": 5.5, "currency": "USD", "remaining_kind": "balance", "resets_at": null},
+                     "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"}
      },
      "totals": {"today_cost": 0, "today_tokens": 0, "date": "2026-10-17", "stale": false}}
     """#
@@ -96,7 +100,7 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(Self.row(report, "Notion", "credits")?.remainingPct), 164.461017 / 3, accuracy: 0.001)
 
         // Kie and DeepSeek are balances, each under one API-billed row, with no quota window.
-        for vendor in ["Kie", "DeepSeek"] {
+        for vendor in ["Kie", "DeepSeek", "OpenRouter"] {
             let rows = report.discoveredAgents.filter { $0.vendor == vendor }
             XCTAssertEqual(rows.count, 1, vendor)
             XCTAssertTrue(rows.allSatisfy(\.isAPIBilled), vendor)
@@ -112,6 +116,9 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertEqual(deepseek.balances.first?.total, Decimal(string: "110.5"))
         XCTAssertEqual(deepseek.balances.first?.granted, 10)
         XCTAssertEqual(deepseek.balances.first?.toppedUp, Decimal(string: "100.5"))
+        let openrouter = try XCTUnwrap(report.billing.first { $0.vendor == "OpenRouter" })
+        XCTAssertEqual(openrouter.currency, "USD")
+        XCTAssertEqual(openrouter.balances.first?.total, Decimal(string: "5.5"))
 
         XCTAssertEqual(report.subscriptions["Codex"], "prolite")
         XCTAssertEqual(report.subscriptions["Muse"], "Muse Free")
@@ -159,7 +166,7 @@ final class DmitHubProviderTests: XCTestCase {
         let report = try await provider.fetchUsage(agents: [], historyHours: 24)
 
         XCTAssertEqual(Self.row(report, "Claude", ClaudeUsage.sessionRowId)?.remainingPct, 86)
-        XCTAssertEqual(Set(report.readingIssues?.keys ?? [:].keys), ["Claude", "Codex", "Antigravity", "Muse", "Notion", "Kie", "DeepSeek"])
+        XCTAssertEqual(Set(report.readingIssues?.keys ?? [:].keys), ["Claude", "Codex", "Antigravity", "Muse", "Notion", "Kie", "DeepSeek", "OpenRouter"])
         XCTAssertEqual(report.readingIssues?["Claude"]?.kind, .readFailed)
         XCTAssertEqual(report.billing.first?.readingIssue?.kind, .readFailed)
 

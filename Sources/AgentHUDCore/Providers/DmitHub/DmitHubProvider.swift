@@ -12,9 +12,9 @@ public actor DmitHubProvider: UsageProvider {
 
     /// Each hub channel's vendor, as rows and the vendor catalog name it.
     static let vendors = ["claude": "Claude", "codex": "Codex", "antigravity": "Antigravity", "muse": "Muse", "notion": "Notion",
-                          "kie": "Kie", "deepseek": "DeepSeek"]
+                          "kie": "Kie", "deepseek": "DeepSeek", "openrouter": "OpenRouter"]
     /// The channels that are a balance, with no quota window: each is one API-billed row whose balance the HUD shows.
-    static let balanceChannels: Set<String> = ["kie", "deepseek"]
+    static let balanceChannels: Set<String> = ["kie", "deepseek", "openrouter"]
 
     private let base: URL
     private let authorization: @Sendable () -> String?

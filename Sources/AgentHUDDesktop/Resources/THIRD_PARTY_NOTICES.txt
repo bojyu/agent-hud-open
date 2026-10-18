@@ -156,7 +156,7 @@ Muse and Kie marks
 
 Sources/AgentHUDDesktop/Resources/muse.png is rendered from https://muse.ai/images/favicon/app-squiggle.svg, and
 Sources/AgentHUDDesktop/Resources/kie.png is resized from https://kie.ai/logo.png, both as published on 2026-10-17.
-Notion's mark (notion.png) is from LobeIcons, under the icon license beside it.
+Notion's and OpenRouter's marks (notion.png, openrouter.png) are from LobeIcons, under the icon license beside it.
 
-Muse, Kie and Notion are trademarks of their owners. The marks are not covered by this repository's license and are
+Muse, Kie, Notion and OpenRouter are trademarks of their owners. The marks are not covered by this repository's license and are
 bundled for personal use only.

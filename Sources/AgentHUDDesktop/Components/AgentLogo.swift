@@ -10,7 +10,7 @@ enum AgentArtwork {
          "Cursor": "cursor", "OpenCode": "opencode", "OpenCode-dark": "opencode-dark", "Kimi": "kimi", "GLM": "glm", "Pi": "pi",
          "GitHub Copilot": "copilot", "OpenClaw": "openclaw", "Hermes": "hermes", "ZCode": "zcode", "CodeBuddy": "codebuddy",
          "WorkBuddy": "workbuddy", "Qwen": "qwen", "Qoder": "qoder", "Qoder-dark": "qoder-dark",
-         "Muse": "muse", "Notion": "notion", "Kie": "kie"]
+         "Muse": "muse", "Notion": "notion", "Kie": "kie", "OpenRouter": "openrouter"]
 
     // A mark that is named here but not bundled must not take the app down with it: the vendor falls back to its
     // lettered badge instead, which is what a client whose artwork nobody has drawn yet already gets.
@@ -26,7 +26,7 @@ enum AgentArtwork {
                 }
                 return true
             }
-            image.isTemplate = ["Grok", "Cursor", "Kimi", "Pi", "GitHub Copilot", "Hermes", "ZCode", "Notion"].contains(vendor)
+            image.isTemplate = ["Grok", "Cursor", "Kimi", "Pi", "GitHub Copilot", "Hermes", "ZCode", "Notion", "OpenRouter"].contains(vendor)
             return (vendor, image)
         }
     )
@@ -54,7 +54,7 @@ enum AgentArtwork {
 
     /// Marks that ship as a single colour and have to be tinted to the surface they sit on.
     private static let monochromeVendors: Set<String> =
-        ["Grok", "Cursor", "Kimi", "Pi", "GitHub Copilot", "Hermes", "ZCode", "Notion"]
+        ["Grok", "Cursor", "Kimi", "Pi", "GitHub Copilot", "Hermes", "ZCode", "Notion", "OpenRouter"]
 
     private static let openAIGreen = NSColor(srgbRed: 16 / 255, green: 163 / 255, blue: 127 / 255, alpha: 1)
 
