@@ -258,6 +258,27 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertNil(DmitHubProvider.sourceInfo(try XCTUnwrap(quota.channel("kie"))))
     }
 
+    func testTheAPISpendThisMonthIsShownWithClaudesAccount() async throws {
+        let anthropic = #""anthropic": {"available": true, "account_key": "fixture-anthropic", "spend": {"available": true, "month_used": 12.34, "currency": "USD", "period_start": "2026-10-01T00:00:00Z", "resets_at": "2026-11-01T00:00:00Z"}, "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"},"#
+        let withSpend = Self.sample.replacingOccurrences(of: #""providers": {"#, with: #""providers": {"# + anthropic)
+        let hub = Hub { _ in Data(withSpend.utf8) }
+        let provider = provider(hub)
+        await provider.refreshAccountUsage(historyHours: 24)
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+
+        let wallet = try XCTUnwrap(report.accounts?["Claude"]?.first?.wallets?.first)
+        XCTAssertEqual(wallet.kind, .monthlySpend)
+        XCTAssertEqual(wallet.used, Decimal(string: "12.34"))
+        XCTAssertEqual(wallet.currency, "USD")
+        XCTAssertNil(report.accounts?["Codex"]?.first?.wallets, "only Claude's account carries it")
+        XCTAssertFalse(report.discoveredAgents.contains { $0.vendor.lowercased() == "anthropic" }, "no row of its own")
+        XCTAssertNil(report.readingIssues?["Anthropic"])
+
+        // Before the hub has read it, Claude's account has no wallet rather than a spend of zero.
+        let without = try await self.provider(Hub { _ in Data(Self.sample.utf8) }).fetchUsageAfterRefresh()
+        XCTAssertNil(without.accounts?["Claude"]?.first?.wallets)
+    }
+
     func testABalanceKeepsItsRowWhenTheHubReadsItUnderAnotherKey() throws {
         let read = try DmitQuota.parse(Data(Self.sample.utf8))
         let channel = try XCTUnwrap(read.channel("deepseek"))
@@ -271,5 +292,12 @@ final class DmitHubProviderTests: XCTestCase {
         let ids = DmitHubProvider.rows(quota).map(\.id)
         XCTAssertFalse(ids.contains { $0.contains("fixture") })
         XCTAssertEqual(Set(ids).count, ids.count)
+    }
+}
+
+private extension DmitHubProvider {
+    func fetchUsageAfterRefresh() async throws -> UsageReport {
+        await refreshAccountUsage(historyHours: 24)
+        return try await fetchUsage(agents: [], historyHours: 24)
     }
 }

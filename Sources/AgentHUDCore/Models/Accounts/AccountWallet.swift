@@ -2,7 +2,8 @@ import Foundation
 
 /// Reported money belongs to an account independently of its subscription allowance.
 public struct AccountWallet: Hashable, Codable, Sendable, Identifiable {
-    public enum Kind: String, Codable, Sendable { case prepaid, onDemand }
+    /// `monthlySpend`: what the account's API calls have cost this calendar month, with no limit or balance of its own.
+    public enum Kind: String, Codable, Sendable { case prepaid, onDemand, monthlySpend }
 
     public let kind: Kind
     public let currency: String

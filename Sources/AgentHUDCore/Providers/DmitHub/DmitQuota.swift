@@ -39,6 +39,9 @@ struct DmitQuota: Hashable, Sendable {
         let breakdown: [String: Double]
         /// Muse's top-up allowance, in the hub's words.
         let topUpLabel: String?
+        /// What the account's API calls have cost this calendar month, and the money it is counted in (Anthropic).
+        let monthSpend: Double?
+        let spendCurrency: String?
 
         /// The hub read this channel on its last pass.
         var isFresh: Bool { status == "fresh" && !stale }
@@ -84,6 +87,7 @@ struct DmitQuota: Hashable, Sendable {
             add("seven-day", used: object["seven_day_used"], reset: object["seven_day_resets_at"], duration: 7 * 86400)
         }
         let credits = object["credits"] as? [String: Any]
+        let spend = object["spend"] as? [String: Any]
         let breakdown = (object["breakdown"] as? [String: Any] ?? [:]).compactMapValues(number)
         return Channel(name: name, accountKey: text(object["account_key"]), plan: text(object["plan_type"]), windows: windows,
                        status: text(object["status"]), stale: object["stale"] as? Bool ?? false, fetchedAt: date(object["fetched_at"]),
@@ -92,7 +96,8 @@ struct DmitQuota: Hashable, Sendable {
                        creditsCurrency: text(credits?["currency"]), creditsGranted: number(credits?["granted"]),
                        creditsToppedUp: number(credits?["topped_up"]),
                        resetCredits: number(object["reset_credits"]).map { Int($0) }, breakdown: breakdown,
-                       topUpLabel: text(object["topup_label"]))
+                       topUpLabel: text(object["topup_label"]), monthSpend: number(spend?["month_used"]),
+                       spendCurrency: text(spend?["currency"]))
     }
 
     /// A number, never a Boolean that JSONSerialization also hands back as an NSNumber.

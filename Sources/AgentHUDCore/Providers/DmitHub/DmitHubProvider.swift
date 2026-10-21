@@ -173,7 +173,9 @@ public actor DmitHubProvider: UsageProvider {
                 observedAt: channel.fetchedAt ?? last.at, quotaNotice: issue?.reason, readingIssue: issue,
                 resetCredits: channel.name == "codex" ? resetCredits : nil,
                 // Only a sound reading lists every window, so a channel that failed keeps the rows it had.
-                quotaWindowIDs: issue == nil ? windowIDs : nil, sourceInfo: Self.sourceInfo(channel))]
+                quotaWindowIDs: issue == nil ? windowIDs : nil,
+                wallets: channel.name == "claude" ? Self.apiSpend(last.quota, fallback: last.at) : nil,
+                sourceInfo: Self.sourceInfo(channel))]
         }
         let descriptors = rows.map { row in
             AgentDescriptor(id: row.id, vendor: row.vendor, model: row.label, shortModel: row.shortLabel, source: Self.source,
@@ -236,6 +238,14 @@ public actor DmitHubProvider: UsageProvider {
     static func account(_ channel: DmitQuota.Channel) -> ProviderAccount {
         let vendor = vendors[channel.name] ?? channel.name
         return ProviderAccount.identified(provider: vendor, user: channel.accountKey ?? "dmit:" + channel.name, workspace: nil)!
+    }
+
+    /// The Anthropic API's spend this month, which the hub reads apart from the Claude subscription, shown with Claude's
+    /// account: nil until the hub has read it.
+    static func apiSpend(_ quota: DmitQuota, fallback: Date) -> [AccountWallet]? {
+        guard let channel = quota.channel("anthropic"), let spent = channel.monthSpend else { return nil }
+        return [AccountWallet(kind: .monthlySpend, currency: channel.spendCurrency ?? "USD", used: decimal(spent),
+                              observedAt: channel.fetchedAt ?? fallback)]
     }
 
     /// The API account a balance channel bills. The hub reads one account per channel, so the pool is the channel's own:

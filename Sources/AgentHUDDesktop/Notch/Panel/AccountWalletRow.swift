@@ -46,7 +46,7 @@ struct AccountWalletRow: View {
     /// The wallet's mark and its name, in the name column of a bar row's width across the whole line.
     @ViewBuilder
     private func name(_ labels: AccountWalletLabels) -> some View {
-        Image(systemName: wallet.kind == .prepaid ? "creditcard" : "dollarsign.circle")
+        Image(systemName: symbol)
             .font(.ui(10))
             .foregroundStyle(theme.tertiary)
             .frame(width: IslandRowLayout.markerWidth)
@@ -54,6 +54,14 @@ struct AccountWalletRow: View {
             .font(.ui(12, .medium))
             .foregroundStyle(theme.secondary)
             .frame(width: half ? nil : IslandRowLayout.nameWidth, alignment: .leading)
+    }
+
+    private var symbol: String {
+        switch wallet.kind {
+        case .prepaid: "creditcard"
+        case .onDemand: "dollarsign.circle"
+        case .monthlySpend: "chart.bar"
+        }
     }
 
     private func amounts(_ labels: AccountWalletLabels) -> some View {
@@ -71,12 +79,14 @@ struct AccountWalletLabels {
         switch wallet.kind {
         case .prepaid: L10n.text("预付余额", "Prepaid balance")
         case .onDemand: L10n.text("按需付费", "On-demand")
+        case .monthlySpend: L10n.text("API 本月支出", "API spend this month")
         }
     }
 
     var amounts: String {
         switch wallet.kind {
         case .prepaid: amount(wallet.balance)
+        case .monthlySpend: amount(wallet.used)
         case .onDemand:
             L10n.text("已用 \(amount(wallet.used)) · 上限 \(amount(wallet.limit))",
                       "Used \(amount(wallet.used)) · Limit \(amount(wallet.limit))")
