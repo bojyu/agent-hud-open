@@ -288,6 +288,7 @@ struct BotSpec: Sendable {
         "Kie": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7)),
         "Notion": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7)),
         "OpenRouter": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7)),
+        "Anthropic API": BotSpec(radius: 0.37, shape: .outline(keep: 0.55, smooth: 7)),
         // A plain red ball with two round black eyes and the logo's pair of small antennae. The logo's cyan
         // pupils are left out: on a face this small they stare.
         "OpenClaw": BotSpec(center: CGPoint(x: 0.5, y: 0.54), reach: 0.7,

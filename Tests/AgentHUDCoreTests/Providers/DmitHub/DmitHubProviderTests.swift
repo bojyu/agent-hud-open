@@ -279,6 +279,23 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertNil(without.accounts?["Claude"]?.first?.wallets)
     }
 
+    func testTheConsolesPrepaidBalanceIsShownWithClaudesAccountAndAsItsOwnRing() async throws {
+        let credits = #""anthropic_credits": {"available": true, "account_key": "fixture-console", "credits": {"available": true, "used": 22.62, "total": 100.0, "remaining": 77.38, "currency": "USD", "remaining_kind": "balance"}, "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"},"#
+        let sample = Self.sample.replacingOccurrences(of: #""providers": {"#, with: #""providers": {"# + credits)
+        let report = try await provider(Hub { _ in Data(sample.utf8) }).fetchUsageAfterRefresh()
+
+        let wallets = try XCTUnwrap(report.accounts?["Claude"]?.first?.wallets)
+        XCTAssertEqual(wallets.map(\.kind), [.prepaid])
+        XCTAssertEqual(wallets.first?.balance, Decimal(string: "77.38"))
+        XCTAssertFalse(report.billing.contains { $0.vendor.lowercased().hasPrefix("anthropic") }, "not a balance row of its own")
+
+        // Its own mark: one ring, the balance as a share of the $100 limit, with the amount beside its windows.
+        let rows = report.discoveredAgents.filter { $0.vendor == "Anthropic API" }
+        XCTAssertEqual(rows.map(\.windowKey), ["balance"])
+        XCTAssertEqual(try XCTUnwrap(Self.row(report, "Anthropic API", "balance")?.remainingPct), 77.38, accuracy: 0.001)
+        XCTAssertEqual(report.accounts?["Anthropic API"]?.first?.wallets?.first?.balance, Decimal(string: "77.38"))
+    }
+
     func testABalanceKeepsItsRowWhenTheHubReadsItUnderAnotherKey() throws {
         let read = try DmitQuota.parse(Data(Self.sample.utf8))
         let channel = try XCTUnwrap(read.channel("deepseek"))

@@ -15,7 +15,8 @@ public actor DmitHubProvider: UsageProvider {
 
     /// Each hub channel's vendor, as rows and the vendor catalog name it.
     static let vendors = ["claude": "Claude", "codex": "Codex", "antigravity": "Antigravity", "muse": "Muse", "notion": "Notion",
-                          "kie": "Kie", "deepseek": "DeepSeek", "openrouter": "OpenRouter"]
+                          "kie": "Kie", "deepseek": "DeepSeek", "openrouter": "OpenRouter",
+                          "anthropic_credits": "Anthropic API"]
     /// The channels that are a balance, with no quota window: each is one API-billed row whose balance the HUD shows.
     static let balanceChannels: Set<String> = ["kie", "deepseek", "openrouter"]
 
@@ -174,7 +175,8 @@ public actor DmitHubProvider: UsageProvider {
                 resetCredits: channel.name == "codex" ? resetCredits : nil,
                 // Only a sound reading lists every window, so a channel that failed keeps the rows it had.
                 quotaWindowIDs: issue == nil ? windowIDs : nil,
-                wallets: channel.name == "claude" ? Self.apiSpend(last.quota, fallback: last.at) : nil,
+                wallets: channel.name == "claude" || channel.name == "anthropic_credits"
+                    ? Self.apiWallets(last.quota, fallback: last.at) : nil,
                 sourceInfo: Self.sourceInfo(channel))]
         }
         let descriptors = rows.map { row in
@@ -209,6 +211,7 @@ public actor DmitHubProvider: UsageProvider {
             case ClaudeUsage.sessionRowId: return L10n.windowSession
             case ClaudeUsage.weeklyRowId: return L10n.windowWeekly
             case "credits": return L10n.text("积分", "Credits")
+            case "balance": return L10n.text("API 余额", "API balance")
             default: return CodexRateLimits.limitName(WindowNames.Period(seconds: window.duration), secondary: false)
             }
         }
@@ -218,6 +221,7 @@ public actor DmitHubProvider: UsageProvider {
             switch window.key {
             case ClaudeUsage.sessionRowId, ClaudeUsage.weeklyRowId: return nil
             case "credits": return L10n.text("积分", "Credits")
+            case "balance": return L10n.text("余额", "Balance")
             default: return WindowNames.Period(seconds: window.duration)?.shortName ?? label
             }
         }
@@ -230,6 +234,11 @@ public actor DmitHubProvider: UsageProvider {
                 windows.append(.init(key: "credits", usedPct: (total - remaining) / total * 100, resetAt: channel.creditsResetAt,
                                      duration: nil))
             }
+            // The API's prepaid balance as a share of the monthly limit the hub was given, $100 by default.
+            if channel.name == "anthropic_credits", let remaining = channel.creditsRemaining, let total = channel.creditsTotal,
+               total > 0 {
+                windows.append(.init(key: "balance", usedPct: (total - remaining) / total * 100, resetAt: nil, duration: nil))
+            }
             return windows.map { Row(channel: channel, window: $0) }
         }
     }
@@ -240,12 +249,20 @@ public actor DmitHubProvider: UsageProvider {
         return ProviderAccount.identified(provider: vendor, user: channel.accountKey ?? "dmit:" + channel.name, workspace: nil)!
     }
 
-    /// The Anthropic API's spend this month, which the hub reads apart from the Claude subscription, shown with Claude's
-    /// account: nil until the hub has read it.
-    static func apiSpend(_ quota: DmitQuota, fallback: Date) -> [AccountWallet]? {
-        guard let channel = quota.channel("anthropic"), let spent = channel.monthSpend else { return nil }
-        return [AccountWallet(kind: .monthlySpend, currency: channel.spendCurrency ?? "USD", used: decimal(spent),
-                              observedAt: channel.fetchedAt ?? fallback)]
+    /// The Anthropic API's money, which the hub reads apart from the Claude subscription, shown with Claude's account:
+    /// the Console's prepaid credit balance and this month's spend, each once the hub has read it; nil while it has
+    /// read neither.
+    static func apiWallets(_ quota: DmitQuota, fallback: Date) -> [AccountWallet]? {
+        var wallets: [AccountWallet] = []
+        if let channel = quota.channel("anthropic_credits"), let balance = channel.creditsRemaining {
+            wallets.append(AccountWallet(kind: .prepaid, currency: channel.creditsCurrency ?? "USD", balance: decimal(balance),
+                                         observedAt: channel.fetchedAt ?? fallback))
+        }
+        if let channel = quota.channel("anthropic"), let spent = channel.monthSpend {
+            wallets.append(AccountWallet(kind: .monthlySpend, currency: channel.spendCurrency ?? "USD", used: decimal(spent),
+                                         observedAt: channel.fetchedAt ?? fallback))
+        }
+        return wallets.isEmpty ? nil : wallets
     }
 
     /// The API account a balance channel bills. The hub reads one account per channel, so the pool is the channel's own:
