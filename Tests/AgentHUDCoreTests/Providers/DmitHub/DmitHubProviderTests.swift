@@ -279,14 +279,12 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertNil(without.accounts?["Claude"]?.first?.wallets)
     }
 
-    func testTheConsolesPrepaidBalanceIsShownWithClaudesAccountAndAsItsOwnRing() async throws {
+    func testTheConsolesPrepaidBalanceIsItsOwnRing() async throws {
         let credits = #""anthropic_credits": {"available": true, "account_key": "fixture-console", "credits": {"available": true, "used": 22.62, "total": 100.0, "remaining": 77.38, "currency": "USD", "remaining_kind": "balance"}, "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"},"#
         let sample = Self.sample.replacingOccurrences(of: #""providers": {"#, with: #""providers": {"# + credits)
         let report = try await provider(Hub { _ in Data(sample.utf8) }).fetchUsageAfterRefresh()
 
-        let wallets = try XCTUnwrap(report.accounts?["Claude"]?.first?.wallets)
-        XCTAssertEqual(wallets.map(\.kind), [.prepaid])
-        XCTAssertEqual(wallets.first?.balance, Decimal(string: "77.38"))
+        XCTAssertNil(report.accounts?["Claude"]?.first?.wallets, "the balance is the Anthropic API's, not Claude's")
         XCTAssertFalse(report.billing.contains { $0.vendor.lowercased().hasPrefix("anthropic") }, "not a balance row of its own")
 
         // Its own mark: one ring, the balance as a share of the $100 limit, with the amount beside its windows.
@@ -294,6 +292,26 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertEqual(rows.map(\.windowKey), ["balance"])
         XCTAssertEqual(try XCTUnwrap(Self.row(report, "Anthropic API", "balance")?.remainingPct), 77.38, accuracy: 0.001)
         XCTAssertEqual(report.accounts?["Anthropic API"]?.first?.wallets?.first?.balance, Decimal(string: "77.38"))
+    }
+
+    func testClaudesCloudCreditsAreAWindowOfClaudes() async throws {
+        let cloud = #""breakdown": {"claude_code": 83, "chat": 6, "cowork": 11, "other": 0}, "cloud": {"used_pct": 45.5, "limit_dollars": 250.0, "used_dollars": 113.78, "remaining_dollars": 136.22, "resets_at": "2026-11-05T07:59:00+00:00"},"#
+        let sample = Self.sample.replacingOccurrences(of: #""breakdown": {"claude_code": 83, "chat": 6, "cowork": 11, "other": 0},"#, with: cloud)
+        XCTAssertNotEqual(sample, Self.sample)
+        let report = try await provider(Hub { _ in Data(sample.utf8) }).fetchUsageAfterRefresh()
+
+        let window = try XCTUnwrap(Self.row(report, "Claude", DmitQuota.cloudRowId))
+        XCTAssertEqual(try XCTUnwrap(window.remainingPct), 54.5, accuracy: 0.001)
+        XCTAssertEqual(window.resetAt, DateParsing.iso8601("2026-11-05T07:59:00Z"))
+        XCTAssertNil(window.windowDuration, "a grant that expires, not a window that repeats")
+        let row = try XCTUnwrap(report.discoveredAgents.first { $0.windowKey == DmitQuota.cloudRowId })
+        XCTAssertEqual(row.vendor, "Claude")
+        XCTAssertEqual(row.shortName, L10n.text("云端", "Cloud"))
+        XCTAssertNotNil(Self.row(report, "Claude", ClaudeUsage.sessionRowId), "beside the plan's own windows")
+
+        // A plan without the grant has no such window rather than one at 0 %.
+        let plain = try await provider(Hub { _ in Data(Self.sample.utf8) }).fetchUsageAfterRefresh()
+        XCTAssertNil(Self.row(plain, "Claude", DmitQuota.cloudRowId))
     }
 
     func testABalanceKeepsItsRowWhenTheHubReadsItUnderAnotherKey() throws {

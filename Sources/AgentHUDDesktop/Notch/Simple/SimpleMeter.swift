@@ -53,8 +53,9 @@ struct SimpleMeterItem: Identifiable, Equatable {
     /// - working: the vendors with a session running, as a logo queue is told them.
     /// - directions: what the director says each mark shows, by mark key, which a dock's marks are told the same.
     /// The one window a vendor's ring shows whatever the others read, by vendor and window key: Notion's monthly
-    /// allowance rather than its six-hour window or its credits. The hover line still writes every window.
-    static let pinnedWindows = ["Notion": "monthly"]
+    /// allowance rather than its six-hour window or its credits, and Claude's weekly window rather than its session or
+    /// its cloud credits. The hover line still writes every window.
+    static let pinnedWindows = ["Notion": "monthly", "Claude": ClaudeUsage.weeklyRowId]
 
     @MainActor
     static func items(rows: [AgentRow], balances: [Balance] = [], working: [String] = [],

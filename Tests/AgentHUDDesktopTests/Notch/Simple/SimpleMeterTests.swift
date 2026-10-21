@@ -64,6 +64,24 @@ final class SimpleMeterTests: XCTestCase {
     }
 
     @MainActor
+    func testClaudesRingShowsItsWeeklyWindowEvenWhenAnotherIsMoreUsed() {
+        let now = Date()
+        let account = ProviderAccount(provider: "Claude", user: "user", workspace: "", evidence: .account)
+        func agent(_ window: String) -> AgentDescriptor {
+            AgentDescriptor(id: account.windowID(window), vendor: "Claude", model: window, source: "test", enabled: true, account: account)
+        }
+        let agents = [agent(ClaudeUsage.sessionRowId), agent(ClaudeUsage.weeklyRowId), agent("claude-cloud")]
+        let report = UsageReport(generatedAt: now, snapshots: [
+            .init(agentId: account.windowID(ClaudeUsage.sessionRowId), remainingPct: 40, resetAt: now.addingTimeInterval(3600), windowDuration: 5.0 * 3600, updatedAt: now),
+            .init(agentId: account.windowID(ClaudeUsage.weeklyRowId), remainingPct: 77, resetAt: now.addingTimeInterval(86400), windowDuration: 7.0 * 86400, updatedAt: now),
+            .init(agentId: account.windowID("claude-cloud"), remainingPct: 54, resetAt: now.addingTimeInterval(86400 * 15), updatedAt: now),
+        ], sessions: [])
+        let view = ReportView(report: report, agents: agents, settings: Settings(), now: now)
+
+        XCTAssertEqual(SimpleMeterItem.items(rows: view.rows).map(\.usedPct), [23], "the weekly window, not the session that is more used")
+    }
+
+    @MainActor
     func testAnAgentWithOnlyABalanceFollowsTheWindowsWithItsBalanceForAFigure() {
         let now = Date()
         let agents = [AgentDescriptor(id: "claude-5h", vendor: "Claude", model: "claude-5h", source: "test", enabled: true)]

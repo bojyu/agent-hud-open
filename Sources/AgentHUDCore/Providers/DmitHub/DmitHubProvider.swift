@@ -175,8 +175,7 @@ public actor DmitHubProvider: UsageProvider {
                 resetCredits: channel.name == "codex" ? resetCredits : nil,
                 // Only a sound reading lists every window, so a channel that failed keeps the rows it had.
                 quotaWindowIDs: issue == nil ? windowIDs : nil,
-                wallets: channel.name == "claude" || channel.name == "anthropic_credits"
-                    ? Self.apiWallets(last.quota, fallback: last.at) : nil,
+                wallets: Self.apiWallets(last.quota, for: channel.name, fallback: last.at),
                 sourceInfo: Self.sourceInfo(channel))]
         }
         let descriptors = rows.map { row in
@@ -210,6 +209,7 @@ public actor DmitHubProvider: UsageProvider {
             switch window.key {
             case ClaudeUsage.sessionRowId: return L10n.windowSession
             case ClaudeUsage.weeklyRowId: return L10n.windowWeekly
+            case DmitQuota.cloudRowId: return L10n.text("云端点数", "Cloud credits")
             case "credits": return L10n.text("积分", "Credits")
             case "balance": return L10n.text("API 余额", "API balance")
             default: return CodexRateLimits.limitName(WindowNames.Period(seconds: window.duration), secondary: false)
@@ -220,6 +220,7 @@ public actor DmitHubProvider: UsageProvider {
         var shortLabel: String? {
             switch window.key {
             case ClaudeUsage.sessionRowId, ClaudeUsage.weeklyRowId: return nil
+            case DmitQuota.cloudRowId: return L10n.text("云端", "Cloud")
             case "credits": return L10n.text("积分", "Credits")
             case "balance": return L10n.text("余额", "Balance")
             default: return WindowNames.Period(seconds: window.duration)?.shortName ?? label
@@ -249,16 +250,16 @@ public actor DmitHubProvider: UsageProvider {
         return ProviderAccount.identified(provider: vendor, user: channel.accountKey ?? "dmit:" + channel.name, workspace: nil)!
     }
 
-    /// The Anthropic API's money, which the hub reads apart from the Claude subscription, shown with Claude's account:
-    /// the Console's prepaid credit balance and this month's spend, each once the hub has read it; nil while it has
-    /// read neither.
-    static func apiWallets(_ quota: DmitQuota, fallback: Date) -> [AccountWallet]? {
+    /// The Anthropic API's money, which the hub reads apart from the Claude subscription: the Console's prepaid credit
+    /// balance with the Anthropic API's own account, and this month's spend with Claude's, each once the hub has read
+    /// it; nil for any other account, or while the hub has read neither.
+    static func apiWallets(_ quota: DmitQuota, for channel: String, fallback: Date) -> [AccountWallet]? {
         var wallets: [AccountWallet] = []
-        if let channel = quota.channel("anthropic_credits"), let balance = channel.creditsRemaining {
+        if channel == "anthropic_credits", let channel = quota.channel("anthropic_credits"), let balance = channel.creditsRemaining {
             wallets.append(AccountWallet(kind: .prepaid, currency: channel.creditsCurrency ?? "USD", balance: decimal(balance),
                                          observedAt: channel.fetchedAt ?? fallback))
         }
-        if let channel = quota.channel("anthropic"), let spent = channel.monthSpend {
+        if channel == "claude", let channel = quota.channel("anthropic"), let spent = channel.monthSpend {
             wallets.append(AccountWallet(kind: .monthlySpend, currency: channel.spendCurrency ?? "USD", used: decimal(spent),
                                          observedAt: channel.fetchedAt ?? fallback))
         }

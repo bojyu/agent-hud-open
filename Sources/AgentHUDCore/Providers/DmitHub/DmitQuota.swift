@@ -50,6 +50,9 @@ struct DmitQuota: Hashable, Sendable {
     let updatedAt: Date?
     let channels: [Channel]
 
+    /// Claude Code's cloud session credits, a window of Claude's own.
+    static let cloudRowId = "claude-cloud"
+
     func channel(_ name: String) -> Channel? { channels.first { $0.name == name } }
 
     static func parse(_ data: Data) throws -> DmitQuota {
@@ -72,6 +75,9 @@ struct DmitQuota: Hashable, Sendable {
         case "claude":
             add(ClaudeUsage.sessionRowId, used: object["five_hour_used"], reset: object["five_hour_resets_at"], duration: 5 * 3600)
             add(ClaudeUsage.weeklyRowId, used: object["seven_day_used"], reset: object["seven_day_resets_at"], duration: 7 * 86400)
+            // The cloud session credits the plan was granted, used up to the day they expire.
+            let cloud = object["cloud"] as? [String: Any]
+            add(cloudRowId, used: cloud?["used_pct"], reset: cloud?["resets_at"], duration: nil)
         case "codex":
             for case let window as [String: Any] in object["quota_windows"] as? [Any] ?? [] {
                 let kind = window["kind"] as? String ?? "primary"
