@@ -17,20 +17,24 @@ struct IslandPane: View {
                     subtitle: L10n.text("每项展示一个简短示例，开关控制对应内容。", "A small sample for each part. Choose what appears in the panel."),
                     theme: theme
                 ) {
-                    SettingsToggleRow(label: L10n.text("会话列表", "Session list"), isOn: settings.binding(\.showIslandSessions))
-                    IslandPartSample(height: 56, look: look, enabled: settings.settings.showIslandSessions) {
-                        sessionSample
+                    if ScreenPlacement.onlyMode != .simple {
+                        SettingsToggleRow(label: L10n.text("会话列表", "Session list"), isOn: settings.binding(\.showIslandSessions))
+                        IslandPartSample(height: 56, look: look, enabled: settings.settings.showIslandSessions) {
+                            sessionSample
+                        }
+                        SettingsDivider(theme: theme)
                     }
-                    SettingsDivider(theme: theme)
                     SettingsToggleRow(label: L10n.text("额度明细", "Quota details"), isOn: settings.binding(\.showIslandQuota))
                     IslandPartSample(height: 64, look: look, enabled: settings.settings.showIslandQuota) {
                         quotaSample
                     }
                     SettingsToggleRow(label: L10n.text("重置倒计时", "Reset countdown"), isOn: settings.binding(\.showResetCountdown))
-                    SettingsDivider(theme: theme)
-                    SettingsToggleRow(label: L10n.text("Token 消耗", "Token usage"), isOn: settings.binding(\.showIslandTokens))
-                    IslandPartSample(height: 64, look: look, enabled: settings.settings.showIslandTokens) {
-                        tokenSample
+                    if ScreenPlacement.onlyMode != .simple {
+                        SettingsDivider(theme: theme)
+                        SettingsToggleRow(label: L10n.text("Token 消耗", "Token usage"), isOn: settings.binding(\.showIslandTokens))
+                        IslandPartSample(height: 64, look: look, enabled: settings.settings.showIslandTokens) {
+                            tokenSample
+                        }
                     }
                     SettingsDivider(theme: theme)
                     // The layout arranges what the switches above leave. A person's click here takes effect at once,
@@ -52,12 +56,14 @@ struct IslandPane: View {
                     subtitle: L10n.text("指针经过不展开，悬停时按一下 Option 打开面板。", "Hovering alone leaves it closed; press Option while hovering to open the panel."),
                     isOn: settings.binding(\.requiresOptionToOpen)
                 )
-                SettingsDivider(theme: theme)
-                SettingsToggleRow(
-                    label: L10n.text("鼠标触顶立即展开", "Open immediately at the top edge"),
-                    subtitle: L10n.text("鼠标移到 HUD 正上方的屏幕顶边时，跳过展开延迟。", "Skip the hover delay when the pointer reaches the screen's top edge directly above the HUD."),
-                    isOn: settings.binding(\.openImmediatelyAtTop)
-                )
+                if ScreenPlacement.onlyMode != .simple {
+                    SettingsDivider(theme: theme)
+                    SettingsToggleRow(
+                        label: L10n.text("鼠标触顶立即展开", "Open immediately at the top edge"),
+                        subtitle: L10n.text("鼠标移到 HUD 正上方的屏幕顶边时，跳过展开延迟。", "Skip the hover delay when the pointer reaches the screen's top edge directly above the HUD."),
+                        isOn: settings.binding(\.openImmediatelyAtTop)
+                    )
+                }
                 SettingsDivider(theme: theme)
                 SliderRow(label: L10n.text("展开延迟", "Hover delay"), value: settings.doubleBinding(\.hoverDelayMs), range: 0...1500, step: 50, format: { "\(Int($0)) ms" }, theme: theme)
                 SettingsDivider(theme: theme)

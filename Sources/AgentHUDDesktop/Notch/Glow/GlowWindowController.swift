@@ -168,6 +168,13 @@ final class GlowWindowController {
         // A logo queue's panel spans the screen, because the island it holds does not stay the width of the
         // marks: an event widens it by a wing on each side, and the open panel is wider still. What keeps
         // the backdrop to the marks' own column is the fade below, which applies only while it is a backdrop.
+        // A Simple panel draws no glow, only its card's shadow, which never reaches the menu bar unless it is docked on the
+        // top edge. Its panel stops below the menu bar: macOS draws the menu bar solid over any window that reaches into it.
+        if geometry.mode == .simple, geometry.edge != .top {
+            var frame = geometry.screenFrame
+            frame.size.height -= min(geometry.menuBarHeight, frame.height)
+            return frame
+        }
         guard !geometry.mode.isDocked else { return geometry.screenFrame }
         return CGRect(
             x: geometry.centerX - panelWidth / 2,
@@ -288,13 +295,17 @@ final class GlowWindowController {
                               outwardOnly: outwardOnly, stops: appearance.stops, scale: scale, cutout: cutout)
         let visible = !appearance.hidden
         // The standard look's shadow lies under the glow's island and shows only with the glow; a light or glass
-        // look's falls from the shell, glow or none, and there is none while the HUD shows no shell.
+        // look's falls from the shell, glow or none, and there is none while the HUD shows no shell. A Simple HUD
+        // never draws a glow or the standard island shadow; it uses this window only when its shells cast shadows.
         let shadowKey: ShadowKey?
         let rendersShadow: Bool
         if look.castsShellShadows {
             shadowKey = shells.surface.flatMap { $0.bare ? nil : shellShadowKey(for: $0, among: shells, look: look,
                                                                                     geometry: geometry, frame: frame) }
             rendersShadow = shadowKey != nil
+        } else if geometry.mode == .simple {
+            shadowKey = nil
+            rendersShadow = false
         } else {
             shadowKey = ShadowKey(caster: ShellShape(size: local.size, radius: islandRadius, flare: 0, floats: false),
                                   scale: scale, look: look, cutouts: [])
@@ -409,7 +420,7 @@ final class GlowWindowController {
         crossFades = restyled && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         defer { crossFades = false }
 
-        if appearance.hidden {
+        if appearance.hidden || geometry.mode == .simple {
             animator.stop()
             softKey = nil
             restingKey = nil
@@ -428,9 +439,9 @@ final class GlowWindowController {
         // A change of look keeps the old look's materials up instead, until the new ones fade in over them, as long as
         // the canvas they were laid out on has not moved or turned under them, as it does when a drop changes the mode.
         let stale = materialsPending && !(restyled && unmoved)
-        glowLayer.isHidden = stale || appearance.hidden
-        shadowLayer.isHidden = stale
-        alertLayer.isHidden = stale || appearance.hidden
+        glowLayer.isHidden = stale || appearance.hidden || !drawsGlow
+        shadowLayer.isHidden = stale || geometry.mode == .simple
+        alertLayer.isHidden = stale || appearance.hidden || !drawsGlow
         shellShadowLayer.isHidden = stale
         if materialsPending {
             // The shells are given their shadows once the materials have come, the card's dropped then.

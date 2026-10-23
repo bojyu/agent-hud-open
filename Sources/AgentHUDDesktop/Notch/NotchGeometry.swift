@@ -33,12 +33,12 @@ struct NotchGeometry: Equatable {
     /// - queue: the measured logo strip, including the configured distance around its marks.
     static func detect(screen: NSScreen?, placement: ScreenPlacement, queue: CGSize? = nil) -> NotchGeometry {
         let frame = screen?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let menuBar = screen.map { max(22, $0.frame.maxY - $0.visibleFrame.maxY) } ?? 24
+        let menuBar = screen.map(ScreenIdentity.menuBarHeight(of:)) ?? 24
         let scale = screen?.backingScaleFactor ?? 2
         let notch = screen.flatMap { $0.safeAreaInsets.top > 0 ? notchRect(of: $0) : nil }
 
-        if placement.mode.isDocked, let queue {
-            let rect = stripRect(queue: queue, frame: frame, placement: placement)
+        if placement.mode.isDocked {
+            let rect = stripRect(queue: queue ?? CGSize(width: 24, height: 24), frame: frame, placement: placement)
             return NotchGeometry(screenFrame: frame, mode: placement.mode, edge: placement.edge, hasNotch: notch != nil,
                                  rect: rect, cornerRadius: logoCornerRadius, backingScale: scale, menuBarHeight: menuBar)
         }

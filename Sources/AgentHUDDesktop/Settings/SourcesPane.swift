@@ -39,7 +39,9 @@ struct SourcesPane: View {
                     .padding(6)
                 }
                 .settingsCard()
-                Text(L10n.text("拖动分组或窗口，调整光晕和面板中的顺序。", "Drag groups or windows to reorder the glow and panel."))
+                Text(ScreenPlacement.onlyMode == .simple
+                    ? L10n.text("拖动分组或窗口，调整面板中的顺序。", "Drag groups or windows to reorder the panel.")
+                    : L10n.text("拖动分组或窗口，调整光晕和面板中的顺序。", "Drag groups or windows to reorder the glow and panel."))
                     .font(.ui(11)).foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 6)
@@ -161,10 +163,13 @@ private struct AgentProviderDetail: View {
     var body: some View {
         let hasAccounts = !group.accounts.isEmpty || !group.billingAccounts.isEmpty || !group.unobservedAccounts.isEmpty
         let windowSections = group.windowSections
+        let showsClientSections = ScreenPlacement.onlyMode != .simple
         let observer = ClientObserverStatus(vendor: group.id, clientHooks: settings.settings.clientHooks, report: report)
-        let hasClientReadings = observer != nil || group.id == AdditionalSource.copilot.vendor
+        let hasClientReadings = showsClientSections && (observer != nil || group.id == AdditionalSource.copilot.vendor)
+        let hasLiveStatus = showsClientSections && group.hasLiveStatus
+        let hasClients = showsClientSections && !group.clients.isEmpty
         VStack(alignment: .leading, spacing: 28) {
-            if !hasAccounts && group.agents.isEmpty && !group.hasLiveStatus && !hasClientReadings && group.clients.isEmpty {
+            if !hasAccounts && group.agents.isEmpty && !hasLiveStatus && !hasClientReadings && !hasClients {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(group.source?.statusLabel ?? L10n.text("暂无可配置项", "No settings available yet"))
                         .font(.ui(13, .medium))
@@ -200,7 +205,10 @@ private struct AgentProviderDetail: View {
             }
             if !group.agents.isEmpty {
                 SettingsSection(title: L10n.text("显示窗口", "Visible windows"),
-                                subtitle: L10n.text("拖动窗口，调整光晕和面板中的顺序。", "Drag windows to reorder the glow and panel."), theme: theme) {
+                                subtitle: ScreenPlacement.onlyMode == .simple
+                                    ? L10n.text("拖动窗口，调整面板中的顺序。", "Drag windows to reorder the panel.")
+                                    : L10n.text("拖动窗口，调整光晕和面板中的顺序。", "Drag windows to reorder the glow and panel."),
+                                theme: theme) {
                     ForEach(windowSections) { section in
                         if let title = section.title ?? (windowSections.count > 1 ? L10n.text("其他窗口", "Other windows") : nil) {
                             Text(title).font(.ui(11, .medium)).foregroundStyle(theme.secondary)
@@ -224,12 +232,12 @@ private struct AgentProviderDetail: View {
                     }
                 }
             }
-            if group.hasLiveStatus {
+            if hasLiveStatus {
                 SettingsSection(title: L10n.text("会话与提醒", "Sessions & reminders"), theme: theme) {
                     AgentLiveStatusSettings(vendor: group.id, settings: settings)
                 }
             }
-            if !group.clients.isEmpty {
+            if hasClients {
                 SettingsSection(title: "Agent", theme: theme) {
                     ForEach(group.clients) { client in
                         VStack(alignment: .leading, spacing: 10) {

@@ -33,7 +33,8 @@ enum ScreenIdentity {
 
     /// The menu bar height of a screen, which every logo-mode size is a share of.
     static func menuBarHeight(of screen: NSScreen) -> CGFloat {
-        max(22, screen.frame.maxY - screen.visibleFrame.maxY)
+        let inset = screen.safeAreaInsets.top > 0 ? screen.safeAreaInsets.top + 1 : 0
+        return max(22, inset, screen.frame.maxY - screen.visibleFrame.maxY)
     }
 
     static func name(for screen: NSScreen) -> String {

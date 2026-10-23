@@ -51,6 +51,7 @@ SIGN_IDENTITY="${AGENT_HUD_SIGN_IDENTITY:-}"
 if [ -z "$SIGN_IDENTITY" ] && security find-identity -p codesigning 2>/dev/null | grep -q '"Agent HUD Local"'; then
   SIGN_IDENTITY="Agent HUD Local"
 fi
+xattr -cr "$APP_DIR" 2>/dev/null || true
 codesign --force --sign "${SIGN_IDENTITY:--}" --identifier app.agenthud.open "$APP_DIR" >&2
 codesign --verify --deep --strict "$APP_DIR" >&2
 printf '%s\n' "$APP_DIR"

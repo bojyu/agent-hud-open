@@ -577,6 +577,35 @@ final class GlowPreparationTests: XCTestCase {
         XCTAssertEqual(ScreenHUD.detachedRadius(height: 20, full: true, bubble: false), 10)
     }
 
+    @MainActor
+    func testSimpleModeOrdersGlowWindowOutUnderStandardLook() {
+        _ = NSApplication.shared
+        let geometry = geometry(edge: .right, mode: .simple)
+        let controller = GlowWindowController(geometry: geometry)
+        defer { controller.close() }
+        let panel = geometry.rect
+        let glow = GlowSettings().geometry(islandWidth: 2, islandHeight: 2, islandRadius: 0)
+        let shells = HUDShells(
+            surface: HUDShell(frame: panel, radius: 14, flare: 0, floats: true, bare: false),
+            dock: nil
+        )
+        let prepared = controller.prepare(
+            geometry: geometry, island: panel, islandRadius: 14, islandFlare: 0,
+            glow: glow, outwardOnly: true, appearance: .idle(), look: .standard, shells: shells, drawsGlow: false
+        )
+        XCTAssertNil(prepared.soft)
+        XCTAssertNil(prepared.shadow)
+
+        controller.update(
+            geometry: geometry, island: panel, islandRadius: 14, islandFlare: 0,
+            glow: glow, outwardOnly: true, appearance: .idle(), look: .standard, shells: shells,
+            animated: false, animatesShells: false, drawsGlow: false,
+            prepared: prepared
+        )
+        XCTAssertFalse(controller.panel.isVisible,
+                       "A Simple HUD under the standard look draws neither glow nor shell shadow, so the overlay window stays ordered out")
+    }
+
     /// The alpha at `point`, in points from the image's lower-left corner.
     private func alpha(of image: GlowImage, at point: CGPoint) throws -> UInt8 {
         let cg = image.image

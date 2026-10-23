@@ -28,10 +28,20 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 
     var subtitle: String {
+        let simple = ScreenPlacement.onlyMode == .simple
         switch self {
-        case .general: return L10n.text("设置外观、语言、启动方式和客户端回调。", "Appearance, language, startup and client hook preferences.")
-        case .sources: return L10n.text("管理实时状态、套餐与显示窗口。", "Manage live status, plans and visible windows.")
-        case .display: return L10n.text("自定义灵动岛光晕与面板内容，更改自动生效。", "Customize your notch and panel. Changes apply automatically.")
+        case .general:
+            return simple
+                ? L10n.text("设置外观、语言和启动方式。", "Appearance, language and startup preferences.")
+                : L10n.text("设置外观、语言、启动方式和客户端回调。", "Appearance, language, startup and client hook preferences.")
+        case .sources:
+            return simple
+                ? L10n.text("管理套餐与显示窗口。", "Manage plans and visible windows.")
+                : L10n.text("管理实时状态、套餐与显示窗口。", "Manage live status, plans and visible windows.")
+        case .display:
+            return simple
+                ? L10n.text("自定义额度面板与展开内容，更改自动生效。", "Customize your quota panel and expanded view. Changes apply automatically.")
+                : L10n.text("自定义灵动岛光晕与面板内容，更改自动生效。", "Customize your notch and panel. Changes apply automatically.")
         case .experimental: return L10n.text("仍在验证的功能，以后可能会变。", "Features still being tested. They may change.")
         }
     }

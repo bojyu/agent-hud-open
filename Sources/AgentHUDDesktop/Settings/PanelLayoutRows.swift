@@ -84,8 +84,11 @@ struct ScreenStyleRow: View {
 
     var body: some View {
         SettingRow(label: L10n.text("HUD 样式", "HUD style"),
-                   subtitle: L10n.text("形态、位置、大小、外观和光晕一起回到默认；「恢复上一版」可以撤销。",
-                                       "Mode, position, sizes, appearance and glow go back to their defaults; Revert to Previous undoes it.")) {
+                   subtitle: ScreenPlacement.onlyMode == .simple
+                       ? L10n.text("位置、大小和外观一起回到默认；「恢复上一版」可以撤销。",
+                                   "Position, sizes and appearance go back to their defaults; Revert to Previous undoes it.")
+                       : L10n.text("形态、位置、大小、外观和光晕一起回到默认；「恢复上一版」可以撤销。",
+                                   "Mode, position, sizes, appearance and glow go back to their defaults; Revert to Previous undoes it.")) {
             Button(L10n.text("恢复默认", "Reset to Default"), action: reset)
                 .controlSize(.small)
                 .disabled(!canReset)
