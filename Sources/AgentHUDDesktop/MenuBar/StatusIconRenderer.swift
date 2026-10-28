@@ -1,34 +1,61 @@
 import AppKit
 import AgentHUDCore
 
-/// 22×11 notch silhouette, or a 14 pt ring for a copy held to the Simple panel: 1.5 px outline in the label color, filled
-/// with the same gradient as the glow.
+/// The menu bar mark: a thin gauge ring in the menu bar's own label colour, as the system's extras are drawn, whose arc
+/// is the highest share used. The arc turns orange at a warning and red at a critical level, so colour only appears
+/// when it says something; a paused or locked HUD shows the faint track alone, dashed.
 enum StatusIconRenderer {
-    static var size: NSSize { ScreenPlacement.onlyMode == .simple ? NSSize(width: 14, height: 14) : NSSize(width: 22, height: 11) }
+    static let size = NSSize(width: 16, height: 16)
+    static let lineWidth: CGFloat = 2
 
-    static func image(stops: [GradientStop]) -> NSImage {
-        let ring = ScreenPlacement.onlyMode == .simple
+    /// - usedPct: the highest share used, 0…100; nil before any reading.
+    /// - level: that reading's level, which colours the arc.
+    /// - idle: paused or without access: the track alone, dashed.
+    static func image(usedPct: Double?, level: StatusLevel?, idle: Bool) -> NSImage {
         let image = NSImage(size: size, flipped: false) { rect in
-            let inset = rect.insetBy(dx: 0.75, dy: 0.75)
-            let path = ring ? NSBezierPath(ovalIn: inset) : NSBezierPath(roundedRect: inset, xRadius: 4, yRadius: 4)
-            NSGraphicsContext.saveGraphicsState()
-            path.addClip()
-            var resolved = stops
-            if resolved.count == 1 {
-                resolved = [GradientStop(color: stops[0].color, location: 0), GradientStop(color: stops[0].color, location: 1)]
+            let ring = rect.insetBy(dx: lineWidth / 2 + 0.75, dy: lineWidth / 2 + 0.75)
+            let center = CGPoint(x: ring.midX, y: ring.midY)
+            let radius = ring.width / 2
+
+            // Track. Colours resolve at draw time, so they follow the menu bar's light or dark look.
+            let track = NSBezierPath(ovalIn: ring)
+            track.lineWidth = lineWidth
+            if idle {
+                track.setLineDash([1.6, 2.2], count: 2, phase: 0)
+                NSColor.labelColor.withAlphaComponent(0.55).setStroke()
+                track.stroke()
+                return true
             }
-            if !resolved.isEmpty,
-               let gradient = NSGradient(colors: resolved.map { NSColor($0.color) }, atLocations: resolved.map { CGFloat($0.location) }, colorSpace: .sRGB) {
-                gradient.draw(in: inset, angle: 0)
+            NSColor.labelColor.withAlphaComponent(0.25).setStroke()
+            track.stroke()
+
+            // Arc: clockwise from twelve o'clock, round-capped.
+            let fraction = max(0, min(1, (usedPct ?? 0) / 100))
+            if fraction > 0 {
+                let arc = NSBezierPath()
+                if fraction >= 0.999 {
+                    arc.appendOval(in: ring)
+                } else {
+                    arc.appendArc(withCenter: center, radius: radius, startAngle: 90,
+                                  endAngle: 90 - 360 * fraction, clockwise: true)
+                }
+                arc.lineWidth = lineWidth
+                arc.lineCapStyle = .round
+                arcColor(level).setStroke()
+                arc.stroke()
             }
-            NSGraphicsContext.restoreGraphicsState()
-            // Resolved at draw time, so it follows the menu bar's light/dark appearance.
-            NSColor.labelColor.setStroke()
-            path.lineWidth = 1.5
-            path.stroke()
             return true
         }
         image.isTemplate = false
+        image.accessibilityDescription = AppResources.applicationName
         return image
+    }
+
+    static func arcColor(_ level: StatusLevel?) -> NSColor {
+        switch level {
+        case .critical: return .systemRed
+        case .warning: return .systemOrange
+        case .ok, nil: return .labelColor
+        }
     }
 }

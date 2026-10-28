@@ -64,11 +64,16 @@ final class StatusItemController: NSObject {
         item.isVisible = !store.isAccessAllowed || settings.settings.showMenuBarIcon
         if !item.isVisible { closeMenu() }
         guard let button = item.button else { return }
-        let stops = store.isPaused || !store.isAccessAllowed ? GlowGradient.idleStops : GlowGradient.stops(levels: store.levels, light: SystemAppearance.isLight)
-        button.image = StatusIconRenderer.image(stops: stops)
-        let title = store.isAccessAllowed ? (store.maxUsedPct.map { " \(TokenFormat.percent($0))" } ?? " —") : " —"
+        let idle = store.isPaused || !store.isAccessAllowed
+        let used = idle ? nil : store.maxUsedPct
+        let levels = store.levels
+        let level: StatusLevel? = levels.contains(.critical) ? .critical : levels.contains(.warning) ? .warning
+            : levels.isEmpty ? nil : .ok
+        button.image = StatusIconRenderer.image(usedPct: used, level: level, idle: idle)
+        let title = used.map { " \(TokenFormat.percent($0))" } ?? " —"
+        // The figure keeps the label colour, as the menu bar's other extras do; the arc alone carries the level.
         button.attributedTitle = NSAttributedString(string: title, attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular),
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium),
             .baselineOffset: 0,
         ])
         button.toolTip = AppResources.applicationName + L10n.text(" · 最高已用额度", " · highest usage")
