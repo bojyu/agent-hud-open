@@ -125,12 +125,15 @@ final class WindowNamesTests: XCTestCase {
             quota(try AntigravityClient.summary(several).windows)
         }
         let onlyWeekly = #"{"displayName":"Claude and GPT models","buckets":[{"bucketId":"3p-weekly","displayName":"Weekly Limit Remaining","remainingFraction":1}]}"#
-        let three = try json(#"{"groups":[\#(gemini),\#(onlyWeekly)]}"#)
+        let argon = #"{"displayName":"Gemini 4 Argon","buckets":[{"bucketId":"gemini-argon-wtu-weekly","displayName":"Gemini 4 Argon Weekly Limit","remainingFraction":0.28}]}"#
+        let three = try json(#"{"groups":[\#(gemini),\#(onlyWeekly),\#(argon)]}"#)
         try assertNames("a group with one remaining period still names the period",
                         zh: [("Gemini Models · Five Hour Limit", "Gemini 5h"), ("Gemini Models · Weekly Limit", "Gemini 每周"),
-                             ("Claude and GPT models · Weekly Limit Remaining", "第三方 每周")],
+                             ("Claude and GPT models · Weekly Limit Remaining", "第三方 每周"),
+                             ("Gemini 4 Argon · Gemini 4 Argon Weekly Limit", "Argon 每周")],
                         en: [("Gemini Models · Five Hour Limit", "Gemini 5h"), ("Gemini Models · Weekly Limit", "Gemini 7d"),
-                             ("Claude and GPT models · Weekly Limit Remaining", "3rd-party 7d")]) {
+                             ("Claude and GPT models · Weekly Limit Remaining", "3rd-party 7d"),
+                             ("Gemini 4 Argon · Gemini 4 Argon Weekly Limit", "Argon 7d")]) {
             quota(try AntigravityClient.summary(three).windows)
         }
         let status = try json(#"{"userStatus":{"cascadeModelConfigData":{"clientModelConfigs":[{"label":"Gemini 3 Pro","modelOrAlias":{"model":"M1"},"quotaInfo":{"remainingFraction":0.5}},{"label":"Claude Sonnet 5","modelOrAlias":{"model":"M2"},"quotaInfo":{"remainingFraction":0.5}},{"label":"Kimi K3","modelOrAlias":{"model":"M3"},"quotaInfo":{"remainingFraction":0.5}}]}}}"#)

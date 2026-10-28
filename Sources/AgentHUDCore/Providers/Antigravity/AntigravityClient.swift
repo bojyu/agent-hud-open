@@ -76,9 +76,17 @@ struct AntigravityClient: Sendable {
             guard agent.windowKey.hasPrefix("antigravity:"), !agent.windowKey.hasPrefix("antigravity:legacy:"),
                   let duration = snapshots.first(where: { $0.agentId == agent.id })?.windowDuration else { return agent }
             let word: String?
-            if agent.windowKey.hasPrefix("antigravity:gemini-") { word = "Gemini" }
-            else if agent.windowKey.hasPrefix("antigravity:3p-") { word = L10n.text("第三方", "3rd-party") }
-            else { word = agent.model.range(of: " · ").map { groupWord(String(agent.model[..<$0.lowerBound])) } }
+            if let range = agent.model.range(of: " · ") {
+                word = groupWord(String(agent.model[..<range.lowerBound]))
+            } else if agent.windowKey.contains("argon") {
+                word = "Argon"
+            } else if agent.windowKey.hasPrefix("antigravity:gemini-") {
+                word = "Gemini"
+            } else if agent.windowKey.hasPrefix("antigravity:3p-") {
+                word = L10n.text("第三方", "3rd-party")
+            } else {
+                word = nil
+            }
             guard let short = compactName(word: word, duration: duration, allModels: agent.allModels),
                   short != agent.shortModel else { return agent }
             return AgentDescriptor(id: agent.id, vendor: agent.vendor, model: agent.model, shortModel: short, source: agent.source,
@@ -135,7 +143,15 @@ struct AntigravityClient: Sendable {
     static func groupWord(_ name: String) -> String {
         let lower = name.lowercased()
         if lower.contains("claude") || lower.contains("gpt") { return L10n.text("第三方", "3rd-party") }
-        return name.split(separator: " ").first.map(String.init) ?? name
+        let raw = name.components(separatedBy: CharacterSet(charactersIn: " -_"))
+        var chosen: String?
+        for word in raw where !word.isEmpty {
+            let w = word.lowercased()
+            if w == "models" || w == "model" { continue }
+            if w.range(of: #"^[vV]?[0-9]+(\.[0-9]+)*$"#, options: .regularExpression) != nil { continue }
+            chosen = word
+        }
+        return chosen ?? name
     }
 
     static func identity(_ json: ProviderJSON) -> (ProviderAccount?, String?) {
