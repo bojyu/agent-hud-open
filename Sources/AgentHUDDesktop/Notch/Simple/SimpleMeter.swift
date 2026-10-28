@@ -98,6 +98,8 @@ struct SimpleMeterItem: Identifiable, Equatable {
 struct SimpleMeterConfig: Equatable {
     /// Clear space between the panel and the screen edge it is parked on.
     static let edgeMargin: CGFloat = 3
+    /// How many points of the panel remain visible at the screen edge while tucked (`DesktopApplication.simpleCapsule`).
+    static let tuckedPeek: CGFloat = 5
     /// The run an empty panel keeps, so a screen with no quota row still has something to grab.
     static let emptyRun: CGFloat = 32
 
@@ -114,6 +116,8 @@ struct SimpleMeterConfig: Equatable {
     var bots: Bool
     /// The panel comes back after a card hid it: its bots take up their looks at once (`DockMemory`).
     var resumes = false
+    /// Whether the panel rests tucked into its screen edge, leaving only `tuckedPeek` visible until hovered.
+    var isTucked = false
 
     init(items: [SimpleMeterItem], placement: ScreenPlacement, bots: Bool = false) {
         self.items = items
@@ -130,6 +134,26 @@ struct SimpleMeterConfig: Equatable {
         var folded = self
         folded.showsNumbers = false
         return folded
+    }
+
+    /// The panel tucked into its screen edge at rest (`DesktopApplication.simpleCapsule`).
+    var tucked: SimpleMeterConfig {
+        var tucked = self
+        tucked.isTucked = true
+        return tucked
+    }
+
+    /// How far toward its screen edge the panel shifts while tucked.
+    var tuckOffset: CGSize {
+        guard isTucked else { return .zero }
+        let panel = panelSize
+        let distance = max(0, (edge.isHorizontal ? panel.height : panel.width) + Self.edgeMargin - Self.tuckedPeek)
+        switch edge {
+        case .top: return CGSize(width: 0, height: -distance)
+        case .bottom: return CGSize(width: 0, height: distance)
+        case .left: return CGSize(width: -distance, height: 0)
+        case .right: return CGSize(width: distance, height: 0)
+        }
     }
 
     /// Side of one mark: inside its ring, or a little larger when it stands alone.

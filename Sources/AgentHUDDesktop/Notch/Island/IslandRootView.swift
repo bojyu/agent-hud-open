@@ -440,11 +440,13 @@ struct IslandRootView: View {
                     let offset = (hidesSilhouette ? edge : .top).isHorizontal
                         ? CGSize(width: presentationFrame.midX - bounds.width / 2, height: 0)
                         : CGSize(width: 0, height: presentationFrame.midY - bounds.height / 2)
+                    let tuck = !visible ? (simpleMeter?.tuckOffset ?? .zero) : .zero
                     surface
                         .frame(width: presentationFrame.width, height: presentationFrame.height,
                                alignment: surfaceAlignment)
-                        .offset(offset)
+                        .offset(x: offset.width + tuck.width, y: offset.height + tuck.height)
                         .animation(geometryAnimation, value: presentationFrame)
+                        .animation(cardMotion, value: simpleMeter?.isTucked)
                         .transaction(value: presentationFrame) { transaction in
                             if animatesGeometry {
                                 transaction.addAnimationCompletion(criteria: .removed, onGeometryCompletion)
@@ -452,8 +454,11 @@ struct IslandRootView: View {
                         }
                         .frame(width: bounds.width, height: bounds.height, alignment: surfaceAlignment)
                 } else {
+                    let tuck = !visible ? (simpleMeter?.tuckOffset ?? .zero) : .zero
                     surface
+                        .offset(tuck)
                         .animation(geometryAnimation, value: size)
+                        .animation(cardMotion, value: simpleMeter?.isTucked)
                         .frame(width: bounds.width, height: bounds.height, alignment: surfaceAlignment)
                 }
                 if let logoQueue, alert == nil || focusVendor != nil {
@@ -534,10 +539,9 @@ struct IslandRootView: View {
                 .onPreferenceChange(PanelHeightKey.self, perform: onContentHeight)
                 .transition(detailTransition)
         } else if isOpen, detached, !pinned, let peek {
-            // A folding Simple panel opens an agent's card at a double click, on its peek as on its mark.
             AgentPeekView(peek: peek)
                 .contentShape(Rectangle())
-                .onTapGesture(count: DesktopApplication.simpleCapsule ? 2 : 1, perform: onPin)
+                .onTapGesture(perform: onPin)
                 .id(peek.vendor)
         } else if isOpen, let store {
             HoverPanelView(store: store, onOpenStats: onOpenStats, onOpenSettings: onOpenSettings,

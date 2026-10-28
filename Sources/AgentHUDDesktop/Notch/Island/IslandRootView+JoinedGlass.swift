@@ -66,6 +66,8 @@ extension IslandRootView {
     func joinedGlass(panel: CGRect, radius: CGFloat, card: CGRect?, bounds: CGSize) -> some View {
         let joins = cardJoinsPanel(standIn: standsInForGlass)
         let motion = cardMotion
+        let tuck = simpleMeter?.tuckOffset ?? .zero
+        let isTucked = simpleMeter?.isTucked ?? false
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         func piece(_ card: CGRect, dimming: Color?) -> some View {
             Color.clear
@@ -78,6 +80,8 @@ extension IslandRootView {
             shape.fill(look.glassDimming)
                 .animation(lookAnimation, value: look)
                 .frame(width: panel.width, height: panel.height)
+                .offset(tuck)
+                .animation(motion, value: isTucked)
                 .position(x: panel.midX, y: panel.midY)
                 .transaction { $0.animation = nil }
             // The line's dimming where it is not under the panel's, so the two never darken each other.
@@ -91,6 +95,8 @@ extension IslandRootView {
                     Color.clear
                         .frame(width: panel.width, height: panel.height)
                         .hudGlassPiece(in: shape)
+                        .offset(tuck)
+                        .animation(motion, value: isTucked)
                         .position(x: panel.midX, y: panel.midY)
                         .transaction { $0.animation = nil }
                     if let card { piece(card, dimming: nil) }

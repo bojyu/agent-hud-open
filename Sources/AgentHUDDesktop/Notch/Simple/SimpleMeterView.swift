@@ -34,19 +34,23 @@ struct SimpleMeterView: View {
         layout {
             ForEach(config.items) { cell($0) }
         }
+        .opacity(config.isTucked ? 0 : 1)
         .padding(EdgeInsets(top: insets.top, leading: insets.left, bottom: insets.bottom, trailing: insets.right))
         .frame(width: panel.width, height: panel.height, alignment: .leading)
         .background {
             if drawsSurface {
                 HUDSurface(shape, look: look, fill: theme.islandFill, contact: nil)
                     .overlay { shape.strokeBorder(look.outline(theme.islandOutline, standIn: glassStandIn), lineWidth: 1) }
+                    .opacity(config.isTucked ? 0.72 : 1)
             }
         }
         .padding(margin, SimpleMeterConfig.edgeMargin)
+        .offset(config.tuckOffset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        // A folding panel's numbers come and go with the panel growing round them, on the island's curve, whatever the
+        // A folding panel's numbers or edge tuck come and go on the island's curve, whatever the
         // island holds still around the figures.
         .animation(reduceMotion ? nil : IslandAnimation.curve, value: config.showsNumbers)
+        .animation(reduceMotion ? nil : IslandAnimation.curve, value: config.isTucked)
         // The marks take the artwork made for the panel's surface, also in a window set to the other scheme.
         .environment(\.colorScheme, look.colorScheme)
         .accessibilityElement(children: .combine)

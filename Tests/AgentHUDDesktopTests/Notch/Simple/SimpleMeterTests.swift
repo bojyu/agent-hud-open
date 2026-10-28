@@ -322,4 +322,43 @@ final class SimpleMeterTests: XCTestCase {
         XCTAssertFalse(SimpleMeterConfig(items: [], placement: ScreenPlacement(mode: .simple)).bots,
                        "a panel only measured or drawn in a snapshot keeps its logos")
     }
+
+    @MainActor
+    func testSimpleCapsuleTucksPanelIntoScreenEdgeAndPullsOutOnEdgeHover() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let key = ScreenIdentity.key(for: screen)
+        let previous = DesktopApplication.simpleCapsule
+        DesktopApplication.simpleCapsule = true
+        defer { DesktopApplication.simpleCapsule = previous }
+
+        let domain = "app.agenthud.tests.simple-tuck.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let settings = SettingsStore(defaults: defaults, defaultAgents: DemoData.agents)
+        settings.update {
+            $0.screens[key] = ScreenPlacement(mode: .simple, edge: .right, showsRings: true, showsNumbers: true, separatesAgents: true)
+        }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings, accessAllowed: { false })
+        store.replace(report: DemoUsageProvider.report(agents: settings.agents, historyHours: UsageStore.historyHours, now: Date()))
+        var pointer = CGPoint(x: -10_000, y: -10_000)
+        let hud = ScreenHUD(key: key, screen: screen, store: store, settings: settings, mouseLocation: { pointer })
+        defer { hud.close() }
+
+        let tucked = try XCTUnwrap(hud.island.rootView.simpleMeter)
+        XCTAssertTrue(tucked.isTucked, "At rest the Simple panel tucks into the screen edge")
+        XCTAssertTrue(tucked.showsRings && tucked.showsNumbers, "The full rings and numbers stay configured")
+        XCTAssertGreaterThan(tucked.tuckOffset.width, 0, "On the right edge the panel shifts rightward into the edge")
+        XCTAssertEqual(hud.hoverRegion.width, ScreenHUD.edgeTriggerThickness, accuracy: 0.001)
+
+        // Hovering the edge trigger strip pulls out the full bar.
+        let trigger = hud.hoverRegion
+        pointer = CGPoint(x: trigger.midX, y: trigger.midY)
+        hud.samplePointer()
+        RunLoop.main.run(until: Date().addingTimeInterval(ScreenHUD.capsuleRestDelay + 0.05))
+        let revealed = try XCTUnwrap(hud.island.rootView.simpleMeter)
+        XCTAssertFalse(revealed.isTucked, "Reaching the screen edge pulls out the full panel")
+        XCTAssertEqual(revealed.tuckOffset, .zero)
+        XCTAssertEqual(hud.hoverRegion, hud.geometry.rect)
+    }
 }
