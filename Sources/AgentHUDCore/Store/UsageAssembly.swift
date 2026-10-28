@@ -35,7 +35,14 @@ public enum UsageAssembly {
     /// file, so a report from the installed clients never shows in its place.
     public static func dmitStore(settings: SettingsStore, ledger: UsageLedger,
                                  hooks: UsageCollectionHooks = UsageCollectionHooks()) -> UsageStore {
-        let retained = RetainedUsageProvider(provider: DmitHubProvider.standard(ledger: ledger),
+        dmitStore(settings: settings, hub: DmitHubProvider.standard(ledger: ledger), ledger: ledger, hooks: hooks)
+    }
+
+    /// The store over `hub`, which a host application builds with its own address and credentials and keeps, to ask
+    /// the hub for a collection (`DmitHubProvider.requestCollection`).
+    public static func dmitStore(settings: SettingsStore, hub: DmitHubProvider, ledger: UsageLedger,
+                                 hooks: UsageCollectionHooks = UsageCollectionHooks()) -> UsageStore {
+        let retained = RetainedUsageProvider(provider: hub,
                                              cacheURL: AppSupport.directory.appendingPathComponent("last-dmit-report.json"))
         let store = UsageStore(provider: retained, settings: settings, hooks: hooks)
         store.ledger = ledger

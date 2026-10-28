@@ -64,12 +64,21 @@ public actor DmitHubProvider: UsageProvider {
 
     /// The hub behind Caddy at `jev.bojyu.world:8443/quota/`, or `AGENT_HUD_DMIT_URL`, signed in with the internet
     /// password the keychain holds for that host. Readings go to `ledger`, so burn rates survive restarts.
-    public static func standard(ledger: UsageLedger) -> DmitHubProvider {
-        let base = ProcessInfo.processInfo.environment["AGENT_HUD_DMIT_URL"].flatMap(URL.init(string:))
+    /// - base: the hub's address in place of the default, for a host application that keeps its own.
+    /// - authorization: the `Authorization` header in place of the keychain's internet password, for a host
+    ///   application that cannot read that item (a sandboxed one) and keeps its own credentials.
+    public static func standard(ledger: UsageLedger, base: URL? = nil,
+                                authorization: (@Sendable () -> String?)? = nil) -> DmitHubProvider {
+        let base = base ?? ProcessInfo.processInfo.environment["AGENT_HUD_DMIT_URL"].flatMap(URL.init(string:))
             ?? URL(string: "https://jev.bojyu.world:8443/quota/")!
         let host = base.host ?? ""
-        return DmitHubProvider(base: base, authorization: { basicAuthorization(server: host) },
+        return DmitHubProvider(base: base, authorization: authorization ?? { basicAuthorization(server: host) },
                                history: QuotaHistoryStore(ledger: ledger, scope: "dmit"))
+    }
+
+    /// The `Basic` header for `user` and `password`.
+    public static func basicAuthorization(user: String, password: String) -> String {
+        "Basic " + Data("\(user):\(password)".utf8).base64EncodedString()
     }
 
     /// The `Basic` header for the keychain's internet password for `server`; nil when the keychain has none.
@@ -81,7 +90,7 @@ public actor DmitHubProvider: UsageProvider {
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let item = result as? [String: Any],
               let user = item[kSecAttrAccount as String] as? String, let data = item[kSecValueData as String] as? Data,
               let password = String(data: data, encoding: .utf8) else { return nil }
-        return "Basic " + Data("\(user):\(password)".utf8).base64EncodedString()
+        return basicAuthorization(user: user, password: password)
     }
 
     public nonisolated var seesLocalWork: Bool { false }

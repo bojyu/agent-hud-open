@@ -52,34 +52,20 @@ struct SimpleMeterItem: Identifiable, Equatable {
     ///
     /// - working: the vendors with a session running, as a logo queue is told them.
     /// - directions: what the director says each mark shows, by mark key, which a dock's marks are told the same.
-    /// The one window a vendor's ring shows whatever the others read, by vendor and window key: Notion's monthly
-    /// allowance rather than its six-hour window or its credits, and Claude's weekly window rather than its session or
-    /// its cloud credits. The hover line still writes every window.
-    static let pinnedWindows = ["Notion": "monthly", "Claude": ClaudeUsage.weeklyRowId]
+    /// The one window a vendor's ring shows whatever the others read (`VendorQuotaSummary.pinnedWindows`). The hover
+    /// line still writes every window.
+    static let pinnedWindows = VendorQuotaSummary.pinnedWindows
 
     @MainActor
     static func items(rows: [AgentRow], balances: [Balance] = [], working: [String] = [],
                       directions: [String: MarkDirector.Direction] = [:]) -> [SimpleMeterItem] {
         let busy = Set(working.map(AgentArtwork.markKey))
-        var order: [String] = []
-        var vendors: [String: String] = [:]
-        var tightest: [String: (used: Double, level: StatusLevel)] = [:]
-        for row in rows {
-            let key = AgentArtwork.markKey(row.agent.vendor)
-            if vendors[key] == nil {
-                order.append(key)
-                vendors[key] = row.agent.vendor
-            }
-            if let pinned = pinnedWindows[row.agent.vendor], row.agent.windowKey != pinned,
-               rows.contains(where: { $0.agent.vendor == row.agent.vendor && $0.agent.windowKey == pinned }) { continue }
-            guard row.assessment.showsLevel, let used = row.usedPct, let level = row.level,
-                  used > (tightest[key]?.used ?? -1) else { continue }
-            tightest[key] = (used, level)
-        }
+        let summaries = VendorQuotaSummary.summaries(rows: rows)
+        var vendors = Dictionary(uniqueKeysWithValues: summaries.map { ($0.markKey, $0.vendor) })
         func state(_ key: String) -> BotState { directions[key]?.state ?? BotState(look: busy.contains(key) ? .plain : .idle) }
-        var items = order.map {
-            SimpleMeterItem(vendor: vendors[$0] ?? $0, usedPct: tightest[$0]?.used, level: tightest[$0]?.level,
-                            isWorking: busy.contains($0), state: state($0), cue: directions[$0]?.cue)
+        var items = summaries.map {
+            SimpleMeterItem(vendor: $0.vendor, usedPct: $0.usedPct, level: $0.level, isWorking: busy.contains($0.markKey),
+                            state: state($0.markKey), cue: directions[$0.markKey]?.cue)
         }
         for balance in balances {
             let key = AgentArtwork.markKey(balance.vendor)
