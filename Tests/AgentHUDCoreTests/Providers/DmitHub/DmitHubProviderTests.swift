@@ -68,15 +68,35 @@ final class DmitHubProviderTests: XCTestCase {
 
     /// A retry an hour away unless asked for, so a failed request in a test is tried again only when the test means it.
     private func provider(_ hub: Hub, authorization: String? = "Basic Zml4dHVyZQ==", clock: Clock = Clock(),
-                          retryAfter: TimeInterval = 3600) -> DmitHubProvider {
+                          retryDelays: [TimeInterval] = [3600]) -> DmitHubProvider {
         DmitHubProvider(base: URL(string: "https://hub.example/quota/")!, authorization: { authorization },
-                        http: ProviderHTTP(send: { try await hub.respond($0) }), clock: { clock.now }, retryAfter: retryAfter)
+                        http: ProviderHTTP(send: { try await hub.respond($0) }), clock: { clock.now }, retryDelays: retryDelays)
     }
 
     private static func row(_ report: UsageReport, _ vendor: String, _ window: String) -> UsageSnapshot? {
         report.snapshots.first { snapshot in
             report.discoveredAgents.contains { $0.id == snapshot.agentId && $0.vendor == vendor && $0.windowKey == window }
         }
+    }
+
+    func testRateLimitedChannelShowsLastReadingAndNextAttempt() async throws {
+        let hub = Hub { _ in Data(#"""
+        {"providers":{"claude":{"available":true,"five_hour_used":14,"status":"stale","stale":true,
+          "fetched_at":"2026-10-17T06:00:00Z","next_attempt_at":"2026-10-17T07:00:00Z",
+          "error":"平台暂时限制查询频率"}}}
+        """#.utf8) }
+        let provider = provider(hub)
+        await provider.refreshAccountUsage(historyHours: 24)
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(Self.row(report, "Claude", ClaudeUsage.sessionRowId)?.remainingPct, 86)
+        let channel = try XCTUnwrap(try DmitQuota.parse(Data(#"""
+        {"providers":{"claude":{"next_attempt_at":"2026-10-17T07:00:00Z"}}}
+        """#.utf8)).channel("claude"))
+        XCTAssertEqual(channel.nextAttemptAt, DateParsing.iso8601("2026-10-17T07:00:00Z"))
+        let reason = try XCTUnwrap(report.readingIssues?["Claude"]?.reason)
+        XCTAssertTrue(reason.contains("平台暂时限制查询频率"))
+        XCTAssertGreaterThan(reason.components(separatedBy: " · ").count, 2)
+        XCTAssertEqual(DmitHubProvider.readInterval, 600)
     }
 
     func testMapsEveryChannelToItsWindows() async throws {
@@ -143,7 +163,8 @@ final class DmitHubProviderTests: XCTestCase {
         await provider.refreshAccountUsage(historyHours: 24)
         let report = try await provider.fetchUsage(agents: [], historyHours: 24)
 
-        XCTAssertEqual(report.readingIssues?["Codex"], .readFailed("登录凭据需要更新"))
+        XCTAssertTrue(report.readingIssues?["Codex"]?.reason.contains("登录凭据需要更新") == true)
+        XCTAssertTrue(report.readingIssues?["Codex"]?.reason.contains("2026") == true)
         XCTAssertNil(report.readingIssues?["Claude"])
         XCTAssertEqual(Set(report.readingIssues?.keys ?? [:].keys), ["Codex"])
         let codex = try XCTUnwrap(report.accounts?["Codex"]?.first)
@@ -207,7 +228,7 @@ final class DmitHubProviderTests: XCTestCase {
     func testAFailedRequestIsTriedAgainSoonAndTheReportReadAfter() async throws {
         let hub = Hub { _ in throw ProviderHTTPError(status: 504) }
         let clock = Clock()
-        let provider = provider(hub, clock: clock, retryAfter: 0.05)
+        let provider = provider(hub, clock: clock, retryDelays: [0.05])
         await provider.refreshAccountUsage(historyHours: 24)
         let checks = await provider.sourceChecks()
         XCTAssertEqual(checks[""]?.count, 2, "the collector reads the report again after the retry")
@@ -241,12 +262,63 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertEqual(Set(requests.map { $0.value(forHTTPHeaderField: "Authorization") }), ["Basic Zml4dHVyZQ=="])
     }
 
-    func testReadsAgainOnTheHubsInterval() async {
+    func testWithoutAnAnswerReadsAgainOnTheHubsInterval() async {
         let provider = provider(Hub { _ in Data() })
-        let last = Self.now
-        let due = await provider.accountChecks(since: ["": last], spread: [:], now: Self.now)
-        XCTAssertEqual(due[""], last.addingTimeInterval(DmitHubProvider.readInterval))
+        let due = await provider.accountChecks(since: ["": Self.now], spread: [:], now: Self.now)
+        XCTAssertEqual(due[""], Self.now.addingTimeInterval(DmitHubProvider.readInterval))
         XCTAssertFalse(provider.seesLocalWork)
+    }
+
+    /// The sample's pass finished at 06:17:13Z; it was read 67 s later.
+    private static let pass = DateParsing.iso8601("2026-10-17T06:17:13.471344+00:00")!
+
+    func testReadsJustAfterTheHubsNextPass() async {
+        let clock = Clock()
+        let provider = provider(Hub { _ in Data(Self.sample.utf8) }, clock: clock)
+        await provider.refreshAccountUsage(historyHours: 24)
+        let due = await provider.accountChecks(since: ["": Self.now], spread: [:], now: Self.now)
+        XCTAssertEqual(due[""], Self.pass.addingTimeInterval(DmitHubProvider.readInterval + DmitHubProvider.passMargin),
+                       "on the hub's clock, sooner than an interval after this read")
+    }
+
+    func testALatePassIsLookedForSoonUntilTheHubHasStalled() async {
+        let clock = Clock()
+        let provider = provider(Hub { _ in Data(Self.sample.utf8) }, clock: clock)
+        // Read again once the next pass was due, and the hub still answers with the old one.
+        clock.advance(DmitHubProvider.readInterval)
+        await provider.refreshAccountUsage(historyHours: 24)
+        let late = await provider.accountChecks(since: ["": clock.now], spread: [:], now: clock.now)
+        XCTAssertEqual(late[""], clock.now.addingTimeInterval(DmitHubProvider.lateLook))
+
+        // An interval past the pass that never came, the hub counts as stalled.
+        clock.advance(DmitHubProvider.readInterval)
+        await provider.refreshAccountUsage(historyHours: 24)
+        let stalled = await provider.accountChecks(since: ["": clock.now], spread: [:], now: clock.now)
+        XCTAssertEqual(stalled[""], clock.now.addingTimeInterval(DmitHubProvider.readInterval))
+    }
+
+    func testFailedRequestsAreTriedAgainLaterEachTime() async throws {
+        let hub = Hub { _ in throw ProviderHTTPError(status: 504) }
+        let clock = Clock()
+        let provider = provider(hub, clock: clock, retryDelays: [3600, 7200])
+        var retries: [Date] = []
+        for _ in 0..<3 {
+            await provider.refreshAccountUsage(historyHours: 24)
+            let checks = await provider.sourceChecks()
+            retries.append(try XCTUnwrap(checks[""]?.first))
+        }
+        XCTAssertEqual(retries.map { $0.timeIntervalSince(clock.now) }, [3602, 7202, 7202], "the last delay repeats")
+        let due = await provider.accountChecks(since: ["": clock.now], spread: [:], now: clock.now)
+        XCTAssertEqual(due[""], clock.now.addingTimeInterval(7200 + DmitHubProvider.readInterval),
+                       "the collector stands by behind the pending retry")
+
+        // A success starts the delays over.
+        await hub.set { _ in Data(Self.sample.utf8) }
+        await provider.refreshAccountUsage(historyHours: 24)
+        await hub.set { _ in throw ProviderHTTPError(status: 504) }
+        await provider.refreshAccountUsage(historyHours: 24)
+        let again = await provider.sourceChecks()
+        XCTAssertEqual(again[""]?.first?.timeIntervalSince(clock.now), 3602)
     }
 
     func testSourceInfoCarriesBreakdownAndTopUp() throws {
@@ -327,6 +399,36 @@ final class DmitHubProviderTests: XCTestCase {
         let ids = DmitHubProvider.rows(quota).map(\.id)
         XCTAssertFalse(ids.contains { $0.contains("fixture") })
         XCTAssertEqual(Set(ids).count, ids.count)
+    }
+
+    func testAntigravityQuotaWindowsMapAllModelGroups() async throws {
+        let agyWindows = #"""
+        "antigravity": {
+          "available": true,
+          "quota_windows": [
+            {"id": "gemini-weekly", "group": "Gemini Models", "name": "Weekly Limit Remaining", "window_seconds": 604800, "used_percent": 3.0, "resets_at": "2026-10-31T09:40:56Z"},
+            {"id": "gemini-5h", "group": "Gemini Models", "name": "Five Hour Limit Remaining", "window_seconds": 18000, "used_percent": 0.0, "resets_at": "2026-10-25T18:11:49Z"},
+            {"id": "3p-weekly", "group": "Claude and GPT models", "name": "Weekly Limit Remaining", "window_seconds": 604800, "used_percent": 14.0, "resets_at": "2026-10-30T05:16:42Z"},
+            {"id": "3p-5h", "group": "Claude and GPT models", "name": "Five Hour Limit Remaining", "window_seconds": 18000, "used_percent": 0.0, "resets_at": "2026-10-25T18:11:49Z"},
+            {"id": "gemini-argon-wtu-weekly", "group": "Gemini 4 Argon", "name": "Gemini 4 Argon Weekly Limit", "window_seconds": 604800, "used_percent": 72.0, "resets_at": "2026-10-30T05:02:03Z"}
+          ],
+          "status": "fresh", "stale": false, "fetched_at": "2026-10-25T13:11:49Z"
+        }
+        """#
+        let payload = #"{"updated_at": "2026-10-25T13:11:49Z", "providers": {\#(agyWindows)}}"#
+        let report = try await provider(Hub { _ in Data(payload.utf8) }).fetchUsageAfterRefresh()
+        let rows = report.discoveredAgents.filter { $0.vendor == "Antigravity" }
+        XCTAssertEqual(rows.map(\.windowKey), [
+            "antigravity:gemini-weekly",
+            "antigravity:gemini-5h",
+            "antigravity:3p-weekly",
+            "antigravity:3p-5h",
+            "antigravity:gemini-argon-wtu-weekly"
+        ])
+        XCTAssertEqual(Set(rows.map(\.shortName)).count, 5, "all 5 Antigravity buckets must have distinct short names")
+        XCTAssertEqual(Self.row(report, "Antigravity", "antigravity:gemini-weekly")?.remainingPct, 97)
+        XCTAssertEqual(Self.row(report, "Antigravity", "antigravity:3p-weekly")?.remainingPct, 86)
+        XCTAssertEqual(Self.row(report, "Antigravity", "antigravity:gemini-argon-wtu-weekly")?.remainingPct, 28)
     }
 }
 

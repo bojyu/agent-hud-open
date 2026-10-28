@@ -3,14 +3,26 @@ import Foundation
 import Security
 
 /// Every quota reading from the Dmit quota hub (`/opt/ai-quota`) and nothing from this Mac: no local logs, no client
-/// logins, no hooks. The hub reads each channel every 120 s; this provider reads the hub's last answer as often, keeps
-/// the last good answer through a failed request, and never shows a channel the hub could not read as 0 %.
+/// logins, no hooks. The hub reads each channel once a pass, every `readInterval`; this provider reads the hub's answer
+/// just after each pass should have finished, keeps the last good answer through a failed request, and never shows a
+/// channel the hub could not read as 0 %.
+///
+/// Reading follows the hub's own clock, not this Mac's: the next read falls `passMargin` after the hub's last pass
+/// (`updated_at`) plus its interval, so a new pass shows within seconds instead of up to an interval late. A pass that
+/// has not appeared by then is looked for again every `lateLook`, until the hub is an interval late, when it counts as
+/// stalled and is read once an interval. A failed request is tried again after 30 s, then 1, 2, 5 and 10 min.
 public actor DmitHubProvider: UsageProvider {
-    /// The hub's own collection interval, which reading it any more often would only repeat.
-    public static let readInterval: TimeInterval = 120
+    /// The hub's own pass interval, and the longest this provider ever waits between two reads.
+    public static let readInterval: TimeInterval = 600
+    /// How long after a pass is due its answer is read: the time the hub takes to read every channel, with room to spare.
+    static let passMargin: TimeInterval = 30
+    /// How soon a pass that is due but has not appeared yet is looked for again.
+    static let lateLook: TimeInterval = 60
+    /// How long after each failed request in a row it is tried again; the last delay repeats.
+    static let retryDelays: [TimeInterval] = [30, 60, 120, 300, 600]
     /// A failed request holds nothing back while the last good answer is younger than this: a network that dropped for
     /// a moment, or a Mac just awake, shows the last readings as they were rather than every channel failed.
-    public static let failureGrace: TimeInterval = 300
+    public static let failureGrace: TimeInterval = 2 * readInterval
     static let source = "Dmit 配额中心"
 
     /// Each hub channel's vendor, as rows and the vendor catalog name it.
@@ -28,19 +40,21 @@ public actor DmitHubProvider: UsageProvider {
     private var last: (at: Date, quota: DmitQuota)?
     /// Why the last request failed; cleared by the next one that succeeds.
     private var failure: String?
-    /// How long after a failed request it is tried again, sooner than the hub's interval.
-    private let retryAfter: TimeInterval
+    /// How long after each failed hub request in a row it is tried again; the last delay repeats.
+    private let retryDelays: [TimeInterval]
+    /// Failed requests in a row; cleared by the next one that succeeds.
+    private var failures = 0
     private var retryTask: Task<Void, Never>?
     /// When the retry after a failed request runs, which the collector reads the report again just after.
     private var retryAt: Date?
 
     /// - base: the hub's address, under which `api/quota` and `api/refresh` are served.
     /// - authorization: the `Authorization` header value, read for every request; nil sends none.
-    /// - retryAfter: how long after a failed request it is tried again.
+    /// - retryDelays: how long after each failed request in a row it is tried again.
     init(base: URL, authorization: @escaping @Sendable () -> String?, http: ProviderHTTP = ProviderHTTP(),
          history: QuotaHistoryStore = QuotaHistoryStore(), clock: @escaping @Sendable () -> Date = { Date() },
-         retryAfter: TimeInterval = 30) {
-        self.retryAfter = retryAfter
+         retryDelays: [TimeInterval] = DmitHubProvider.retryDelays) {
+        self.retryDelays = retryDelays.isEmpty ? [Self.readInterval] : retryDelays
         self.base = base
         self.authorization = authorization
         self.http = http
@@ -79,6 +93,7 @@ public actor DmitHubProvider: UsageProvider {
             try Task.checkCancellation()
             last = (now, quota)
             failure = nil
+            failures = 0
             retryTask?.cancel()
             retryTask = nil
             retryAt = nil
@@ -94,10 +109,11 @@ public actor DmitHubProvider: UsageProvider {
         }
     }
 
-    /// Tries a failed request again after `retryAfter`, and again after each that fails, until one succeeds.
+    /// Tries a failed request again, each time a little later (`retryDelays`), until one succeeds.
     private func scheduleRetry() {
         retryTask?.cancel()
-        let delay = retryAfter
+        failures += 1
+        let delay = retryDelays[min(failures, retryDelays.count) - 1]
         retryAt = clock().addingTimeInterval(delay)
         retryTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
@@ -126,7 +142,21 @@ public actor DmitHubProvider: UsageProvider {
     }
 
     public func accountChecks(since: [String: Date], spread: [String: TimeInterval], now: Date) async -> [String: Date] {
-        ["": (since[""] ?? .distantPast).addingTimeInterval(Self.readInterval)]
+        ["": nextRead(since: since[""], now: now)]
+    }
+
+    /// When the collector next reads the hub. While a retry is pending the retry reads it, and the collector only
+    /// stands by an interval past it in case the retry never runs.
+    func nextRead(since ran: Date?, now: Date) -> Date {
+        let ran = max(ran ?? .distantPast, last?.at ?? .distantPast)
+        let latest = ran.addingTimeInterval(Self.readInterval)
+        if let retryAt { return retryAt.addingTimeInterval(Self.readInterval) }
+        guard let last else { return latest }
+        let pass = (last.quota.updatedAt ?? last.at).addingTimeInterval(Self.readInterval + Self.passMargin)
+        if pass > ran { return min(pass, latest) }
+        // The pass is due but the last read did not see it yet: look again soon, unless the hub has stalled.
+        let overdue = now.timeIntervalSince(pass)
+        return overdue < Self.readInterval ? min(ran.addingTimeInterval(Self.lateLook), latest) : latest
     }
 
     public func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
@@ -180,7 +210,7 @@ public actor DmitHubProvider: UsageProvider {
         }
         let descriptors = rows.map { row in
             AgentDescriptor(id: row.id, vendor: row.vendor, model: row.label, shortModel: row.shortLabel, source: Self.source,
-                            enabled: true, account: Self.account(row.channel))
+                            enabled: true, account: Self.account(row.channel), allModels: row.window.allModels)
         } + last.quota.channels.filter { Self.balanceChannels.contains($0.name) && $0.creditsRemaining != nil }.map { channel in
             // The balance's own row, which the HUD lists the balance under.
             let pool = Self.pool(channel)
@@ -206,6 +236,7 @@ public actor DmitHubProvider: UsageProvider {
         var remaining: Double { min(100, max(0, 100 - window.usedPct)) }
 
         var label: String {
+            if let label = window.label { return label }
             switch window.key {
             case ClaudeUsage.sessionRowId: return L10n.windowSession
             case ClaudeUsage.weeklyRowId: return L10n.windowWeekly
@@ -218,6 +249,12 @@ public actor DmitHubProvider: UsageProvider {
 
         /// Claude's short names come from its persisted keys; every other window gives its period.
         var shortLabel: String? {
+            if channel.name == "antigravity", window.key.hasPrefix("antigravity:") {
+                let word = window.group.map(AntigravityClient.groupWord)
+                let period = WindowNames.Period(seconds: window.duration)
+                if window.allModels { return period?.shortName }
+                if let word { return period.map { "\(word) \($0.afterWord)" } ?? word }
+            }
             switch window.key {
             case ClaudeUsage.sessionRowId, ClaudeUsage.weeklyRowId: return nil
             case DmitQuota.cloudRowId: return L10n.text("云端", "Cloud")
@@ -279,7 +316,14 @@ public actor DmitHubProvider: UsageProvider {
     /// A channel the hub could not read on its last pass keeps its last values, held back from alerts and levels.
     static func issue(_ channel: DmitQuota.Channel) -> ReadingIssue? {
         guard !channel.isFresh else { return nil }
-        return .readFailed(channel.error ?? L10n.text("Dmit 上的数据已过期", "Data on Dmit is out of date"))
+        var details = [channel.error ?? L10n.text("Dmit 上的数据已过期", "Data on Dmit is out of date")]
+        if let fetched = channel.fetchedAt {
+            details.append(L10n.text("上次成功更新：", "Last updated: ") + fetched.formatted(date: .abbreviated, time: .shortened))
+        }
+        if let next = channel.nextAttemptAt {
+            details.append(L10n.text("下次尝试：", "Next attempt: ") + next.formatted(date: .abbreviated, time: .shortened))
+        }
+        return .readFailed(details.joined(separator: " · "))
     }
 
     /// What has no field of its own yet: Claude's use by surface and Muse's top-up allowance.
