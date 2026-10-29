@@ -195,6 +195,19 @@ public actor DmitHubProvider: UsageProvider {
             let issue = shownFailure(at: now).map(ReadingIssue.readFailed) ?? Self.issue(channel)
             if let issue { issues[vendor] = issue }
             if let plan = channel.plan { subscriptions[vendor] = plan }
+            let account = Self.account(channel)
+            let windowIDs = Set(rows.filter { $0.channel.name == channel.name }.map(\.id))
+            if channel.name == "codex", let count = channel.resetCredits {
+                resetCredits = CodexResetCredits(availableCount: count, credits: nil)
+            }
+            // Balance-only channels also keep their account metadata and absolute credit details.
+            accounts[vendor] = [AccountObservation(account: account, client: vendor, plan: channel.plan,
+                observedAt: channel.fetchedAt ?? last.at, quotaNotice: issue?.reason, readingIssue: issue,
+                resetCredits: channel.name == "codex" ? resetCredits : nil,
+                // Only a sound reading lists every window, so a channel that failed keeps the rows it had.
+                quotaWindowIDs: issue == nil ? windowIDs : nil,
+                wallets: Self.apiWallets(last.quota, for: channel.name, fallback: last.at),
+                sourceInfo: Self.sourceInfo(channel, apiSpend: channel.name == "claude" ? last.quota.channel("anthropic") : nil))]
             if Self.balanceChannels.contains(channel.name) {
                 billing.append(APIBilling(vendor: vendor, balances: channel.creditsRemaining.map {
                     [AccountBalance(currency: channel.creditsCurrency ?? "credits", total: Self.decimal($0),
@@ -202,20 +215,7 @@ public actor DmitHubProvider: UsageProvider {
                                     toppedUp: Self.decimal(channel.creditsToppedUp ?? 0))]
                 } ?? [], isAvailable: channel.creditsRemaining.map { $0 > 0 }, updatedAt: channel.fetchedAt ?? last.at,
                     notice: issue?.reason, readingIssue: issue, billingPool: Self.pool(channel)))
-                continue
             }
-            let account = Self.account(channel)
-            let windowIDs = Set(rows.filter { $0.channel.name == channel.name }.map(\.id))
-            if channel.name == "codex", let count = channel.resetCredits {
-                resetCredits = CodexResetCredits(availableCount: count, credits: nil)
-            }
-            accounts[vendor] = [AccountObservation(account: account, client: vendor, plan: channel.plan,
-                observedAt: channel.fetchedAt ?? last.at, quotaNotice: issue?.reason, readingIssue: issue,
-                resetCredits: channel.name == "codex" ? resetCredits : nil,
-                // Only a sound reading lists every window, so a channel that failed keeps the rows it had.
-                quotaWindowIDs: issue == nil ? windowIDs : nil,
-                wallets: Self.apiWallets(last.quota, for: channel.name, fallback: last.at),
-                sourceInfo: Self.sourceInfo(channel))]
         }
         let descriptors = rows.map { row in
             AgentDescriptor(id: row.id, vendor: row.vendor, model: row.label, shortModel: row.shortLabel, source: Self.source,
@@ -335,13 +335,42 @@ public actor DmitHubProvider: UsageProvider {
         return .readFailed(details.joined(separator: " · "))
     }
 
-    /// What has no field of its own yet: Claude's use by surface and Muse's top-up allowance.
-    static func sourceInfo(_ channel: DmitQuota.Channel) -> String? {
+    /// Extra detail beside the windows: absolute credit amounts, Claude's surfaces and Muse's top-up allowance.
+    static func sourceInfo(_ channel: DmitQuota.Channel, apiSpend: DmitQuota.Channel? = nil) -> String? {
         var parts: [String] = []
         let surfaces = [("claude_code", "Claude Code"), ("chat", "Chat"), ("cowork", "Cowork"), ("other", L10n.text("其他", "Other"))]
         let shares = surfaces.compactMap { key, name in channel.breakdown[key].map { "\(name) \(Int($0.rounded()))%" } }
         if !shares.isEmpty { parts.append(L10n.text("用量来源：", "Usage by surface: ") + shares.joined(separator: " · ")) }
         if let topUp = channel.topUpLabel { parts.append(L10n.text("加量包：", "Top-up: ") + topUp) }
+        if let apiSpend, let issue = issue(apiSpend) {
+            // API spend is read separately; its failure must not invalidate Claude's subscription windows.
+            parts.append(L10n.text("本月 API 花费：", "API spend this month: ") + issue.reason)
+        }
+        func amounts(_ values: [(String, Double?)], currency: String?) -> String {
+            values.compactMap { label, value in
+                value.map { number in
+                    // Credits have no currency; do not format them as money.
+                    return label + " " + (currency.flatMap { $0 == "credits" ? nil : $0 }.map { MoneyFormat.amount(decimal(number), currency: $0) }
+                        ?? number.formatted(.number.precision(.fractionLength(0...2))))
+                }
+            }.joined(separator: " · ")
+        }
+        if channel.name == "notion" || channel.name == "anthropic_credits" || (balanceChannels.contains(channel.name)
+            && (channel.creditsUsed != nil || channel.creditsTotal != nil)) {
+            let detail = amounts([(L10n.text("已用", "Used"), channel.creditsUsed),
+                                  (L10n.text("总额", "Total"), channel.creditsTotal),
+                                  (L10n.text("剩余", "Remaining"), channel.creditsRemaining)], currency: channel.creditsCurrency)
+            if !detail.isEmpty { parts.append(L10n.text("积分：", "Credits: ") + detail) }
+        }
+        if balanceChannels.contains(channel.name), let resetAt = channel.creditsResetAt {
+            parts.append(L10n.text("重置时间：", "Resets at: ") + resetAt.formatted(date: .abbreviated, time: .shortened))
+        }
+        if channel.name == "claude" {
+            let detail = amounts([(L10n.text("已用", "Used"), channel.cloudAmounts["used_dollars"]),
+                                  (L10n.text("总额", "Total"), channel.cloudAmounts["limit_dollars"]),
+                                  (L10n.text("剩余", "Remaining"), channel.cloudAmounts["remaining_dollars"])], currency: "USD")
+            if !detail.isEmpty { parts.append(L10n.text("云端点数：", "Cloud credits: ") + detail) }
+        }
         return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 

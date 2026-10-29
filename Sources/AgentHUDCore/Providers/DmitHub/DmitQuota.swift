@@ -46,6 +46,9 @@ struct DmitQuota: Hashable, Sendable {
         /// What the account's API calls have cost this calendar month, and the money it is counted in (Anthropic).
         let monthSpend: Double?
         let spendCurrency: String?
+        /// Absolute amounts stay available beside the percentage windows.
+        let creditsUsed: Double?
+        let cloudAmounts: [String: Double]
 
         /// The hub read this channel on its last pass.
         var isFresh: Bool { status == "fresh" && !stale }
@@ -130,7 +133,8 @@ struct DmitQuota: Hashable, Sendable {
                        creditsToppedUp: number(credits?["topped_up"]),
                        resetCredits: number(object["reset_credits"]).map { Int($0) }, breakdown: breakdown,
                        topUpLabel: text(object["topup_label"]), monthSpend: number(spend?["month_used"]),
-                       spendCurrency: text(spend?["currency"]))
+                       spendCurrency: text(spend?["currency"]), creditsUsed: number(credits?["used"]),
+                       cloudAmounts: (object["cloud"] as? [String: Any] ?? [:]).compactMapValues(number))
     }
 
     /// A number, never a Boolean that JSONSerialization also hands back as an NSNumber.

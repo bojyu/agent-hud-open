@@ -149,6 +149,8 @@ final class DmitHubProviderTests: XCTestCase {
         let openrouter = try XCTUnwrap(report.billing.first { $0.vendor == "OpenRouter" })
         XCTAssertEqual(openrouter.currency, "USD")
         XCTAssertEqual(openrouter.balances.first?.total, Decimal(string: "5.5"))
+        let creditDetails = try XCTUnwrap(report.accounts?["OpenRouter"]?.first?.sourceInfo)
+        for amount in ["14.50", "20.00", "5.50"] { XCTAssertTrue(creditDetails.contains(amount), creditDetails) }
 
         XCTAssertEqual(report.subscriptions["Codex"], "prolite")
         XCTAssertEqual(report.subscriptions["Muse"], "Muse Free")
@@ -330,6 +332,19 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertNil(DmitHubProvider.sourceInfo(try XCTUnwrap(quota.channel("kie"))))
     }
 
+    func testCreditDetailsKeepAbsoluteAmountsAndUnknownFieldsStayAbsent() throws {
+        let quota = try DmitQuota.parse(Data(Self.sample.utf8))
+        let notion = try XCTUnwrap(quota.channel("notion"))
+        XCTAssertEqual(notion.creditsUsed, 135.538983)
+        let detail = try XCTUnwrap(DmitHubProvider.sourceInfo(notion))
+        for number in ["135.54", "300", "164.46"] { XCTAssertTrue(detail.contains(number), detail) }
+
+        let empty = try DmitQuota.parse(Data(#"{"providers":{"notion":{"credits":{}}}}"#.utf8))
+        XCTAssertNil(DmitHubProvider.sourceInfo(try XCTUnwrap(empty.channel("notion"))), "missing amounts are not zero")
+        let zero = try DmitQuota.parse(Data(#"{"providers":{"notion":{"credits":{"used":0,"remaining":0}}}}"#.utf8))
+        XCTAssertNotNil(DmitHubProvider.sourceInfo(try XCTUnwrap(zero.channel("notion"))), "a reported zero is still a reading")
+    }
+
     func testTheAPISpendThisMonthIsShownWithClaudesAccount() async throws {
         let anthropic = #""anthropic": {"available": true, "account_key": "fixture-anthropic", "spend": {"available": true, "month_used": 12.34, "currency": "USD", "period_start": "2026-10-01T00:00:00Z", "resets_at": "2026-11-01T00:00:00Z"}, "status": "fresh", "stale": false, "fetched_at": "2026-10-17T06:17:10.416379+00:00"},"#
         let withSpend = Self.sample.replacingOccurrences(of: #""providers": {"#, with: #""providers": {"# + anthropic)
@@ -349,6 +364,31 @@ final class DmitHubProviderTests: XCTestCase {
         // Before the hub has read it, Claude's account has no wallet rather than a spend of zero.
         let without = try await self.provider(Hub { _ in Data(Self.sample.utf8) }).fetchUsageAfterRefresh()
         XCTAssertNil(without.accounts?["Claude"]?.first?.wallets)
+    }
+
+    func testFailedAPISpendIsExplainedWithoutHidingClaudesQuota() async throws {
+        let spend = #""anthropic":{"status":"stale","stale":true,"error":"Console login expired"},"#
+        let payload = Self.sample.replacingOccurrences(of: #""providers": {"#, with: #""providers": {"# + spend)
+        let report = try await provider(Hub { _ in Data(payload.utf8) }).fetchUsageAfterRefresh()
+        XCTAssertTrue(report.accounts?["Claude"]?.first?.sourceInfo?.contains("Console login expired") == true)
+        XCTAssertNil(report.readingIssues?["Claude"], "the subscription reading succeeded")
+        XCTAssertEqual(Self.row(report, "Claude", ClaudeUsage.weeklyRowId)?.remainingPct, 76)
+    }
+
+    func testChannelsWithoutValuesStillKeepTheirAccountAndFailure() async throws {
+        let payload = #"""
+        {"providers":{
+          "muse":{"status":"stale","error":"Muse login expired"},
+          "anthropic_credits":{"status":"stale","error":"Console login expired"},
+          "deepseek":{"status":"stale","error":"API key expired"}
+        }}
+        """#
+        let report = try await provider(Hub { _ in Data(payload.utf8) }).fetchUsageAfterRefresh()
+        XCTAssertEqual(Set(report.accounts?.keys ?? [:].keys), ["Muse", "Anthropic API", "DeepSeek"])
+        XCTAssertEqual(report.accounts?["Muse"]?.first?.readingIssue?.reason, "Muse login expired")
+        XCTAssertTrue(report.discoveredAgents.isEmpty, "missing values must not invent percentage or balance rows")
+        XCTAssertTrue(try XCTUnwrap(report.billing.first).balances.isEmpty)
+        XCTAssertEqual(report.billing.first?.readingIssue?.reason, "API key expired")
     }
 
     func testTheConsolesPrepaidBalanceIsItsOwnRing() async throws {
@@ -380,6 +420,8 @@ final class DmitHubProviderTests: XCTestCase {
         XCTAssertEqual(row.vendor, "Claude")
         XCTAssertEqual(row.shortName, L10n.text("云端", "Cloud"))
         XCTAssertNotNil(Self.row(report, "Claude", ClaudeUsage.sessionRowId), "beside the plan's own windows")
+        let details = try XCTUnwrap(report.accounts?["Claude"]?.first?.sourceInfo)
+        for amount in ["113.78", "250.00", "136.22"] { XCTAssertTrue(details.contains(amount), details) }
 
         // A plan without the grant has no such window rather than one at 0 %.
         let plain = try await provider(Hub { _ in Data(Self.sample.utf8) }).fetchUsageAfterRefresh()
